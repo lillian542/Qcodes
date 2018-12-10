@@ -65,7 +65,9 @@ SPECS = List[ParamSpec]
 class CompletedError(RuntimeError):
     pass
 
-
+class Test():
+    pass
+    
 class _Subscriber(Thread):
     """
     Class to add a subscriber to a DataSet. The subscriber gets called

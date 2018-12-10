@@ -27,6 +27,8 @@ def flatten_1D_data_for_plot(rawdata: Sequence[Sequence[Any]]) -> np.ndarray:
 
     return dataarray
 
+def test():
+    print('you found qcodes!')
 
 def get_data_by_id(run_id: int) -> List:
     """
