@@ -2,11 +2,11 @@ import os
 from typing import Optional
 
 # QCoDeS imports
-# from qcodes.instrument_drivers.Minicircuits.Base_SP16T import (SP16T_Base, HSeriesSwitchChannelBase)
 from qcodes.instrument_drivers.Minicircuits.Base_SPDT import (SPDT_Base, SwitchChannelBase)
 
 try:
     import clr
+    from System import String
 except ImportError:
     raise ImportError("""Module clr not found. Please obtain it by
                          running 'pip install pythonnet'
@@ -14,21 +14,17 @@ except ImportError:
 
 
 class SwitchChannelSP16T(SwitchChannelBase):
-
     def _set_switch(self, channel_num):
         command = ":SP16T:STATE:{}".format(channel_num)
         self._parent.switch.Send_SCPI(command, '')
 
     def _get_switch(self):
-        current_channel = self._parent.switch.Send_SCPI(":SP16T:STATE?", '')[1]
-        return current_channel
-
-
+        return self._parent.switch.Send_SCPI(":SP16T:STATE?", '')[1]
 
 
 class USB_SP16T(SPDT_Base):
     """
-    Mini-Circuits SPDT RF switch
+    Mini-Circuits SP16T RF switch
 
     Args:
             name: the name of the instrument
@@ -71,6 +67,7 @@ class USB_SP16T(SPDT_Base):
         import mcl_SolidStateSwitch64
         self.switch = mcl_SolidStateSwitch64.USB_Digital_Switch()
 
+#        if not self.switch.Connect(String(serial_number)):
         if not self.switch.Connect(serial_number):
             raise RuntimeError('Could not connect to device')
         self.address = self.switch.Get_Address()
@@ -78,10 +75,8 @@ class USB_SP16T(SPDT_Base):
         self.connect_message()
         self.add_channels(num_options=16)
 
-    def get_idn(self):
-        # the arguments in those functions is the serial number or none if
-        # there is only one switch.        
-        fw = "Haven't gotten that function to work yet" #GetExtFirmware(int A0, int A1, int A2, string Firmware)
+    def get_idn(self):       
+        fw = self.switch.Send_SCPI(':FIRMWARE?', '')[1]   
         MN = self.switch.Read_ModelName('')[1]   
         SN = self.switch.Read_SN('')[1]
 
