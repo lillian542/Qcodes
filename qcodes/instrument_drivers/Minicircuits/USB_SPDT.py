@@ -60,7 +60,7 @@ class USB_SPDT(SPDT_Base):
         self.address = self.switch.Get_Address()
         self.serial_number = self.switch.Read_SN('')[1]
         self.connect_message()
-        self.add_channels()
+        self.add_channels(num_options=2) 
 
     def get_idn(self):
         # the arguments in those functions is the serial number or none if

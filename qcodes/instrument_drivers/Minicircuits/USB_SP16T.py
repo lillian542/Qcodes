@@ -2,8 +2,8 @@ import os
 from typing import Optional
 
 # QCoDeS imports
-from qcodes.instrument_drivers.Minicircuits.Base_SPDT import (
-    SPDT_Base, SwitchChannelBase)
+# from qcodes.instrument_drivers.Minicircuits.Base_SP16T import (SP16T_Base, HSeriesSwitchChannelBase)
+from qcodes.instrument_drivers.Minicircuits.Base_SPDT import (SPDT_Base, SwitchChannelBase)
 
 try:
     import clr
@@ -14,15 +14,16 @@ except ImportError:
 
 
 class SwitchChannelSP16T(SwitchChannelBase):
-    def _set_switch(self, switch):
-        if not isinstance(switch, int):
-            raise RuntimeError("Please enter switch number to change switch.")
-        commmand = ":SP16T:STATE:{}".format(switch)
-        self._parent.switch.Send_SCPI(command, RetStr=None)
+
+    def _set_switch(self, channel_num):
+        command = ":SP16T:STATE:{}".format(channel_num)
+        self._parent.switch.Send_SCPI(command, '')
 
     def _get_switch(self):
-        status = self._parent.switch.GetSwitchesStatus(self._parent.address)[1]
-                return int("{0:04b}".format(status)[-1 - self.channel_number]) + 1           #this will not work!!!
+        current_channel = self._parent.switch.Send_SCPI(":SP16T:STATE?", '')[1]
+        return current_channel
+
+
 
 
 class USB_SP16T(SPDT_Base):
@@ -37,7 +38,7 @@ class USB_SP16T(SPDT_Base):
             kwargs: kwargs to be passed to Instrument class.
     """
 
-    CHANNEL_CLASS = SwitchChannelUSB
+    CHANNEL_CLASS = SwitchChannelSP16T
     PATH_TO_DRIVER = r'mcl_SolidStateSwitch64'
 
     def __init__(self, name: str, driver_path: Optional[str]=None,
@@ -69,20 +70,19 @@ class USB_SP16T(SPDT_Base):
             )
         import mcl_SolidStateSwitch64
         self.switch = mcl_SolidStateSwitch64.USB_Digital_Switch()
-#        self.switch = mcl_RF_Switch_Controller64.USB_RF_SwitchBox()
 
         if not self.switch.Connect(serial_number):
             raise RuntimeError('Could not connect to device')
         self.address = self.switch.Get_Address()
         self.serial_number = self.switch.Read_SN('')[1]
         self.connect_message()
-        self.add_channels()
+        self.add_channels(num_options=16)
 
     def get_idn(self):
         # the arguments in those functions is the serial number or none if
-        # there is only one switch.
-        fw = self.switch.GetFirmware()
-        MN = self.switch.Read_ModelName('')[1]
+        # there is only one switch.        
+        fw = "Haven't gotten that function to work yet" #GetExtFirmware(int A0, int A1, int A2, string Firmware)
+        MN = self.switch.Read_ModelName('')[1]   
         SN = self.switch.Read_SN('')[1]
 
         id_dict = {
@@ -92,3 +92,4 @@ class USB_SP16T(SPDT_Base):
             'vendor': 'Mini-Circuits'
         }
         return id_dict
+

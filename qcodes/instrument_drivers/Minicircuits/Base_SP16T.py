@@ -9,7 +9,7 @@ from qcodes.utils.validators import Ints
 log = logging.getLogger(__name__)
 
 
-class SwitchChannelBase(InstrumentChannel):
+class HSeriesSwitchChannelBase(InstrumentChannel):
     def __init__(self, parent, name, channel_letter):
         """
         Args:
@@ -20,7 +20,8 @@ class SwitchChannelBase(InstrumentChannel):
 
         super().__init__(parent, name)
         self.channel_letter = channel_letter.upper()
-        _chanlist = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+        #_chanlist = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p']
+        _chanlist = ['j1', 'j2', 'j3', 'j4', 'j5', 'j6', 'j7', 'j8', 'j9', 'j10', 'j11', 'j12', 'j13', 'j14', 'j15', 'j16']
         self.channel_number = _chanlist.index(channel_letter)
 
         self.add_parameter(
@@ -30,14 +31,16 @@ class SwitchChannelBase(InstrumentChannel):
             get_cmd=self._get_switch,
             vals=Ints(1, 2))
 
-    def __call__(self, *args):
-        if len(args) == 1:
-            self.switch(args[0])
-        elif len(args) == 0:
-            return self.switch()
-        else:
-            raise RuntimeError(
-                'Call channel with either one or zero arguments')
+    # def __call__(self, *args):
+    #     raise NotImplementedError
+
+    #     if len(args) == 1:
+    #         self.switch(args[0])
+    #     elif len(args) == 0:
+    #         return self.switch()
+    #     else:
+    #         raise RuntimeError(
+    #             'Call channel with either one or zero arguments')
 
     def _set_switch(self, switch):
         raise NotImplementedError()
@@ -46,7 +49,12 @@ class SwitchChannelBase(InstrumentChannel):
         raise NotImplementedError()
 
 
-class SPDT_Base(Instrument):
+
+
+
+
+class SP16T_Base(Instrument):
+
     @property
     def CHANNEL_CLASS(self):
         raise NotImplementedError
@@ -55,7 +63,7 @@ class SPDT_Base(Instrument):
         channels = ChannelList(
             self, "Channels", self.CHANNEL_CLASS, snapshotable=False)
 
-        _chanlist = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+        _chanlist = ['j1', 'j2', 'j3', 'j4', 'j5', 'j6', 'j7', 'j8', 'j9', 'j10', 'j11', 'j12', 'j13', 'j14', 'j15', 'j16']
         self._deprecated_attributes = {
             'channel_{}'.format(k): k
             for k in _chanlist
@@ -74,17 +82,21 @@ class SPDT_Base(Instrument):
         channels.lock()
         self.add_submodule('channels', channels)
 
-    def all(self, switch_to):
-        for c in self.channels:
-            c.switch(switch_to)
 
-    def __getattr__(self, key):
-        if key in self._deprecated_attributes:
-            warnings.warn(
-                ("Using '{}' is deprecated and will be removed in future" +
-                 "releases. Use '{}' instead").
-                format(key, self._deprecated_attributes[key]), UserWarning)
-        return super().__getattr__(key)
+    def all(self, switch_to):
+        raise NotImplementedError
+
+#     def all(self, switch_to):
+#         for c in self.channels:
+#             c.switch(switch_to)
+
+#     def __getattr__(self, key):
+#         if key in self._deprecated_attributes:
+#             warnings.warn(
+#                 ("Using '{}' is deprecated and will be removed in future" +
+#                  "releases. Use '{}' instead").
+#                 format(key, self._deprecated_attributes[key]), UserWarning)
+#         return super().__getattr__(key)
 
     def get_number_of_channels(self):
         model = self.get_idn()['model']
@@ -104,4 +116,4 @@ class SPDT_Base(Instrument):
                 'The driver could not determine the number of channels of' +
                 ' the model \'{}\', it might not be supported'.format(model)
             )
-        return int(channels)
+        return int(channels) 

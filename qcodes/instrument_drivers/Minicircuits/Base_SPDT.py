@@ -10,25 +10,29 @@ log = logging.getLogger(__name__)
 
 
 class SwitchChannelBase(InstrumentChannel):
-    def __init__(self, parent, name, channel_letter):
+    def __init__(self, parent, name, channel_letter, num_options):
         """
         Args:
             parent (Instrument): The instrument the channel is a part of
             name (str): the name of the channel
-            channel_letter (str): channel letter ['a', 'b', 'c' or 'd'])
+            channel_letter (str): channel letter ['a', 'b', 'c' or 'd']
+            num_options (int): how many different values this channel can be set to)
         """
 
         super().__init__(parent, name)
         self.channel_letter = channel_letter.upper()
         _chanlist = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+        _optionslist = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         self.channel_number = _chanlist.index(channel_letter)
+
+        vals = _optionslist[0:num_options]
 
         self.add_parameter(
             'switch',
             label='switch {}'.format(self.channel_letter),
             set_cmd=self._set_switch,
             get_cmd=self._get_switch,
-            vals=Ints(1, 2))
+            vals=Ints(vals[0], vals[-1]))
 
     def __call__(self, *args):
         if len(args) == 1:
@@ -51,7 +55,7 @@ class SPDT_Base(Instrument):
     def CHANNEL_CLASS(self):
         raise NotImplementedError
 
-    def add_channels(self):
+    def add_channels(self, num_options):
         channels = ChannelList(
             self, "Channels", self.CHANNEL_CLASS, snapshotable=False)
 
@@ -65,7 +69,7 @@ class SPDT_Base(Instrument):
         _chanlist = _chanlist[0:_max_channel_number]
 
         for c in _chanlist:
-            channel = self.CHANNEL_CLASS(self, 'channel_{}'.format(c), c)
+            channel = self.CHANNEL_CLASS(self, 'channel_{}'.format(c), c, num_options)
             channels.append(channel)
             attribute_name = 'channel_{}'.format(c)
             self.add_submodule(attribute_name, channel)
