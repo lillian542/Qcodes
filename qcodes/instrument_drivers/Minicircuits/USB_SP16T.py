@@ -2,11 +2,11 @@ import os
 from typing import Optional
 
 # QCoDeS imports
-from qcodes.instrument_drivers.Minicircuits.Base_SPDT import (SPDT_Base, SwitchChannelBase)
+from qcodes.instrument_drivers.Minicircuits.Base_SPDT import (
+    SPDT_Base, SwitchChannelBase)
 
 try:
     import clr
-    from System import String
 except ImportError:
     raise ImportError("""Module clr not found. Please obtain it by
                          running 'pip install pythonnet'
@@ -37,8 +37,8 @@ class USB_SP16T(SPDT_Base):
     CHANNEL_CLASS = SwitchChannelSP16T
     PATH_TO_DRIVER = r'mcl_SolidStateSwitch64'
 
-    def __init__(self, name: str, driver_path: Optional[str]=None,
-                 serial_number: Optional[str]=None, **kwargs):
+    def __init__(self, name: str, driver_path: Optional[str]=None, 
+        serial_number: Optional[str]=None, **kwargs):
         # we are eventually overwriting this but since it's called
         # in __getattr__ of `SPDT_Base` it's important that it's
         # always set to something to avoid infinite recursion
@@ -59,16 +59,15 @@ class USB_SP16T(SPDT_Base):
 
         except (ImportError, FileNotFoundException):
             raise ImportError(
-                """Load of mcl_SolidStateSwitch64.dll not possible. Make sure
+                """Load of mcl_SolidStateSwitch64.dll not possible. Make sure 
                 the dll file is not blocked by Windows. To unblock right-click
                 the dll to open properties and check the 'unblock' checkmark
                 in the bottom. Check that your python installation is 64bit."""
             )
         import mcl_SolidStateSwitch64
-        self.switch = mcl_SolidStateSwitch64.USB_Digital_Switch()
+        self.switch = mcl_SolidStateSwitch64.USB_Digital_Switch()                
 
-#        if not self.switch.Connect(String(serial_number)):
-        if not self.switch.Connect(serial_number):
+        if not self.switch.Connect(serial_number)[0]:
             raise RuntimeError('Could not connect to device')
         self.address = self.switch.Get_Address()
         self.serial_number = self.switch.Read_SN('')[1]
