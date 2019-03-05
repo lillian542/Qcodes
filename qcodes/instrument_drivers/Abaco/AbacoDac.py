@@ -40,7 +40,7 @@ class AbacoDAC(IPInstrument):
     @classmethod
     def _create_file(cls, data: List[np.ndarray], dformat):
         res = cls._makeTextDataFile(data, dformat)
-        if dfomart == 1:
+        if dformat == 1:
             file_access = 'w'
         else:
             file_access = 'wb'
