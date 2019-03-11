@@ -2,7 +2,7 @@ from threading import Thread
 import socket
 import time
 
-PORT=5556
+PORT = 5556
 
 
 class Server(Thread):
