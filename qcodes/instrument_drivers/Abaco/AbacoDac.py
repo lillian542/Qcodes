@@ -20,14 +20,14 @@ class AbacoDAC(IPInstrument):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs, persistent=False, terminator='')
-        with self.temporary_timeout(11):
-            print("asked returned {}".format(self.ask("init_state\n")))
-            print("asked returned {}".format(self.ask("init_state\n")))
-        # cls.ask("init_state")
-        # time.sleep(1)
-        # cls.ask("config_state")
-        # glWaveFileMask=test_
-        pass
+        # with self.temporary_timeout(11):
+        #     print("asked returned {}".format(self.ask("init_state\n")))
+        #     print("asked returned {}".format(self.ask("init_state\n")))
+        # # cls.ask("init_state")
+        # # time.sleep(1)
+        # # cls.ask("config_state")
+        # # glWaveFileMask=test_
+        # pass
 
     @contextmanager
     def temporary_timeout(self, timeout):
