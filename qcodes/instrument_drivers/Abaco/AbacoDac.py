@@ -9,7 +9,6 @@ import time
 from qcodes.instrument.ip import IPInstrument
 
 
-
 class AbacoDAC(IPInstrument):
     V_PP_DC = 1.7  # Data sheet FMC144 user manual p. 14
     V_PP_AC = 1.0  # Data sheet FMC144 user manual p. 14
@@ -36,11 +35,10 @@ class AbacoDAC(IPInstrument):
         yield
         self.set_timeout(old_timeout)
 
-
     @classmethod
     def _create_file(cls, data: List[np.ndarray], dformat):
         res = cls._makeTextDataFile(data, dformat)
-        if dfomart == 1:
+        if dformat == 1:
             file_access = 'w'
         else:
             file_access = 'wb'
@@ -63,7 +61,7 @@ class AbacoDAC(IPInstrument):
         """
         This function produces a text data file for the abaco DAC that
         specifies the waveforms. Samples are represented by integer values.
-        The file has the following strucutre:
+        The file has the following structure:
         (lines starting with '#' are not part of the file)
         #--Header--------------------------------------------------------------
         <number of blocks>
@@ -110,7 +108,6 @@ class AbacoDAC(IPInstrument):
         for i in range(n_channels):
             cls.write_sample(output, total_num_samples, dformat)
 
-
         # writing the waveform of each block
         for block in data:
             for i_sample in range(block.shape[0]):
@@ -136,5 +133,3 @@ class AbacoDAC(IPInstrument):
             print('{}'.format(sample), file=stream)
         elif dformat == 2:
             stream.write(sample.to_bytes(4, byteorder='big', signed=True))
-
-
