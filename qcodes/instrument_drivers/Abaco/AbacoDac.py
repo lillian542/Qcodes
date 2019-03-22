@@ -6,10 +6,10 @@ from math import ceil
 import shutil
 import time
 
-from qcodes.instrument.ip import IPInstrument
+from qcodes.instrument.visa import VisaInstrument
 
 
-class AbacoDAC(IPInstrument):
+class AbacoDAC(VisaInstrument):
     V_PP_DC = 1.7  # Data sheet FMC144 user manual p. 14
     V_PP_AC = 1.0  # Data sheet FMC144 user manual p. 14
     DAC_RESOLUTION_BITS = 16
@@ -17,8 +17,10 @@ class AbacoDAC(IPInstrument):
     # FILENAME = r"\\PCX79470-0001RG\Users\4DSP-PCIX490-0001\OneDrive - Microsoft\4DSP\sw_23_10_2017_sandbox\PRJ0161_WorkstationApp\waveform\test2_{}.txt"
     FILENAME = "test_{}.{}"
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs, persistent=False, terminator='')
+    def __init__(self, name, address, port, *args, **kwargs) -> None:
+        # address is TCPIP0::hostname::port::SOCKET
+        self._visa_address = "TCPIP0::{:s}::{:d}::SOCKET".format(address, port)
+        super().__init__(name, self._visa_address, terminator='', device_clear=False, **kwargs)
         # with self.temporary_timeout(11):
         #     print("asked returned {}".format(self.ask("init_state\n")))
         #     print("asked returned {}".format(self.ask("init_state\n")))
@@ -27,6 +29,7 @@ class AbacoDAC(IPInstrument):
         # # cls.ask("config_state")
         # # glWaveFileMask=test_
         # pass
+
 
     @contextmanager
     def temporary_timeout(self, timeout):
