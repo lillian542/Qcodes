@@ -11,10 +11,11 @@ import time
 from qcodes.instrument.visa import VisaInstrument
 from qcodes.instrument.ip import IPInstrument
 
+import qcodes.utils.validators as vals
+
 
 class AbacoDAC(IPInstrument):
-    V_PP_DC = 1.7  # Data sheet FMC144 user manual p. 14
-    V_PP_AC = 1.0  # Data sheet FMC144 user manual p. 14
+    MAX_V_PP = {'AC': 1.0, 'DC': 1.7} # Data sheet FMC144 user manual p. 14
     DAC_RESOLUTION_BITS = 16
     SAMPLES_IN_BUFFER_DIVISOR = 4
     FILENAME = "test_{}.{}"
@@ -47,6 +48,15 @@ class AbacoDAC(IPInstrument):
         self.add_function('_load_waveform_to_fpga', call_cmd='load_waveform_state')
 
         self.output_enabled = False
+
+        # ToDo: is this ridiculous and what does it mean anyway? And it should start as whatever the default will be...
+        self.add_parameter('voltage_coupling_mode',
+                           vals=vals.Enum('DC', 'AC'))
+
+        # ToDo: this, like voltage coupling mode, needs to start out with some default
+        self.add_parameter('V_pp',
+                           label='Voltage peak-to-peak',
+                           vals=vals.Numbers(0, self.max_allowed_voltage))
 
     @contextmanager
     def temporary_timeout(self, timeout):
@@ -140,8 +150,7 @@ class AbacoDAC(IPInstrument):
                 contents.seek(0)
                 shutil.copyfileobj(contents, fd)
 
-    @classmethod
-    def make_and_save_awg_file_locally(cls, seq: List[np.ndarray], dformat: int) -> str:
+    def make_and_save_awg_file_locally(self, seq: List[np.ndarray], dformat: int) -> str:
         """
         This function produces a text data file for the abaco DAC that
         specifies the waveforms. Samples are represented by integer values.
@@ -185,7 +194,7 @@ class AbacoDAC(IPInstrument):
 
         """
 
-        # ToDo: currently the sequences are output with both channels and markers.
+        # ToDo: currently the forged sequences are output with both channels and markers.
         #       The marker names in the forged sequence will need to be converted to channel numbers to upload here
 
         # get element size (size of longest channel output array)
@@ -198,31 +207,28 @@ class AbacoDAC(IPInstrument):
                 for rep in range(element['sequencing']['nrep']):
                     if ch in element['data']:
                         # ToDo: convert output dict values into twos complement data here
-                        a = element['data'][ch]
+                        a = self.forged_seq_array_to_16b2c(element['data'][ch])
                         output_dict[ch].append(a)
                     else:
                         output_dict[ch].append(np.zeros(block_size))
 
         # get number of blocks (elements), padded_block_size and total_num_samples
         n_blocks = len(output_dict[1])
-        d = cls.SAMPLES_IN_BUFFER_DIVISOR
+        d = self.SAMPLES_IN_BUFFER_DIVISOR
         padded_block_size = -(-block_size // d) * d
         total_num_samples = padded_block_size * n_blocks
 
-        header = cls._make_file_header(n_blocks, total_num_samples, dformat)
+        header = self._make_file_header(n_blocks, total_num_samples, dformat)
 
-        data = cls._make_file_data(n_blocks, padded_block_size, output_dict, dformat)
+        data = self._make_file_data(n_blocks, padded_block_size, output_dict, dformat)
 
-        cls._create_files(header, data, dformat)
-
-        return header, data
+        self._create_files(header, data, dformat)
 
     @classmethod
     def _make_file_header(cls, n_blocks, total_num_samples, dformat: int, channels_per_file=8):
         """args: forged sequence
         returns: IO for file header, in either string (dformat=1) or binary (dformat=2) format.
         """
-        # ToDo: does this really need to be its own function?
         if dformat == 1:
             header = io.StringIO()
         elif dformat == 2:
@@ -235,6 +241,16 @@ class AbacoDAC(IPInstrument):
             cls.write_sample(header, total_num_samples, dformat)
 
         return header
+
+    def forged_seq_array_to_16b2c(self, array):
+        """Takes an array with values between -1 and 1, where 1 specifies max voltage and -1 min voltage.
+
+        Returns an array of voltages (based on the current set peak-to-peak voltage) converted into twos-complement
+        data, as required by the AWG."""
+
+        amplitude_scaling = self.Vpp/self.MAX_V_PP[self.voltage_coupling_mode]
+        # ToDo: test this
+        return (array * self.max_16b2c * amplitude_scaling).astype(int)
 
     @classmethod
     def _voltage_to_int(cls, v):
