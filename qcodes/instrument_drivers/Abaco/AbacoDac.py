@@ -17,8 +17,14 @@ class AbacoDAC(IPInstrument):
     V_PP_AC = 1.0  # Data sheet FMC144 user manual p. 14
     DAC_RESOLUTION_BITS = 16
     SAMPLES_IN_BUFFER_DIVISOR = 4
-    # FILENAME = r"\\PCX79470-0001RG\Users\4DSP-PCIX490-0001\OneDrive - Microsoft\4DSP\sw_23_10_2017_sandbox\PRJ0161_WorkstationApp\waveform\test2_{}.txt"
     FILENAME = "test_{}.{}"
+
+    FILE_CHANNEL_POSITION = {
+        '_0': [1, 2, 3, 4, 5, 6, 7, 8],
+        '_1': [9, 10, 11, 12, 13, 14, 15, 16]
+    }
+
+    NUM_CHANNELS = 8 * len(FILE_CHANNEL_POSITION)
 
     def __init__(self, name, address, port, *args, **kwargs) -> None:
         # address is TCPIP0::hostname::port::SOCKET
@@ -38,7 +44,6 @@ class AbacoDAC(IPInstrument):
         self.add_function('_hardware_configure', call_cmd='config_state')
         self.add_function('_load_waveform_to_fpga', call_cmd='load_waveform_state')
 
-
         self.output_enabled = False
 
     @contextmanager
@@ -49,28 +54,38 @@ class AbacoDAC(IPInstrument):
         self.set_timeout(old_timeout)
 
     @classmethod
-    def _create_file(cls, data: List[np.ndarray], dformat):
-        res = cls._makeTextDataFile(data, dformat)
+    def _create_files(cls, header, data, dformat):
         if dformat == 1:
             file_access = 'w'
+            file_type = 'txt'
+            content_type = io.StringIO
         else:
             file_access = 'wb'
+            file_type = 'bin'
+            # ToDo: is this correct?
+            content_type = io.BytesIO
+
         # write files to disk
-        for i in range(2):
-            with open(cls.FILENAME.format(i, 'txt'), file_access) as fd:
-                res.seek(0)
-                shutil.copyfileobj(res, fd)
+        for i in data:
+            print(i)
+            contents = content_type()
+            contents.write(header.getvalue())
+            contents.write(data[i].getvalue())
+
+            with open(cls.FILENAME.format(i, file_type), file_access) as fd:
+                contents.seek(0)
+                shutil.copyfileobj(contents, fd)
+
+    # @classmethod
+    # def create_txt_file(cls, data: List[np.ndarray]):
+    #     cls._create_file(data, dformat=1)
+    #
+    # @classmethod
+    # def create_dat_file(cls, data: List[np.ndarray]):
+    #     cls._create_file(data, dformat=2)
 
     @classmethod
-    def create_txt_file(cls, data: List[np.ndarray]):
-        cls._create_file(data, dformat=1)
-
-    @classmethod
-    def create_dat_file(cls, data: List[np.ndarray]):
-        cls._create_file(data, dformat=2)
-
-    @classmethod
-    def _makeTextDataFile(cls, data: List[np.ndarray], dformat: int) -> str:
+    def _makeTextDataFile(cls, seq: List[np.ndarray], dformat: int) -> str:
         """
         This function produces a text data file for the abaco DAC that
         specifies the waveforms. Samples are represented by integer values.
@@ -100,45 +115,103 @@ class AbacoDAC(IPInstrument):
         ...
         Please note that all blocks have to have the same length
         Args:
-            data: The actual waveform data as a list of matrices of shape
-                  (n_points, n_channels) for each block. n_channels must be
-                  identical for each block
+            seq: The forged sequence
         """
-        # checking input data
-        n_blocks = len(data)
-        n_channels = data[0].shape[1]
-        block_size = max([a.shape[0] for a in data])
+
+        """
+        Assumptions:
+            1. All elements have the same channels outputting in them, so the channels in seq[0] are the same as in
+               every other element.
+            2. The length (in samples) of the longest channel output array for element 0 is also the length of the 
+               longest output array for the entire sequence.
+            3. The total number of samples (i.e. block or element size) is the same for all channels
+                
+        """
+
+        # ToDo: currently the sequences are output with both channels and markers.
+        #       The marker names in the forged sequence will need to be converted to channel numbers to upload here
+
+        # get element size (size of longest channel output array)
+        block_size = max([len(a) for a in seq[0]['data'].values()])  # Assumption 2
+
+        # create output dictionary containing list of output data for all channels, including padding on each element
+        output_dict = {ch: [] for ch in range(1, cls.NUM_CHANNELS+1)}
+        for element in seq:
+            for ch in output_dict:
+                for rep in range(element['sequencing']['nrep']):
+                    if ch in element['data']:
+                        # ToDo: convert output dict values into twos complement data here
+                        a = element['data'][ch]
+                        output_dict[ch].append(a)
+                    else:
+                        output_dict[ch].append(np.zeros(block_size))
+
+        # get number of blocks (elements), padded_block_size and total_num_samples
+        n_blocks = len(output_dict[1])
         d = cls.SAMPLES_IN_BUFFER_DIVISOR
         padded_block_size = -(-block_size//d)*d
         total_num_samples = padded_block_size*n_blocks
-        # writing the header
+
+        header = cls._make_file_header(n_blocks, total_num_samples, dformat)
+
+        data = cls._make_file_data(n_blocks, padded_block_size, output_dict, dformat)
+
+        return header, data
+
+    @classmethod
+    def _make_file_header(cls, n_blocks, total_num_samples, dformat: int, channels_per_file=8):
+        """args: forged sequence
+        returns: IO for file header, in either string (dformat=1) or binary (dformat=2) format.
+        """
+        # ToDo: does this really need to be its own function?
         if dformat == 1:
-            output = io.StringIO()
+            header = io.StringIO()
         elif dformat == 2:
-            output = io.BytesIO()
+            header = io.BytesIO()
+        else:
+            raise RuntimeError(f"Variable dformat must be 1 (for txt file) or 2 (for bin file). Received {dformat}.")
 
-        cls.write_sample(output, n_blocks, dformat)
-        for i in range(n_channels):
-            cls.write_sample(output, total_num_samples, dformat)
+        cls.write_sample(header, n_blocks, dformat)
+        for i in range(channels_per_file):
+            cls.write_sample(header, total_num_samples, dformat)
 
-        # writing the waveform of each block
-        for block in data:
-            for i_sample in range(block.shape[0]):
-                for i_channel in range(block.shape[1]):
-                    current_sample = cls._voltage_to_int(
-                        block[i_sample, i_channel])
-                    cls.write_sample(output, current_sample, dformat)
-
-            # padding
-            for i_sample in range(block.shape[0], padded_block_size):
-                for i_channel in range(block.shape[1]):
-                    current_sample = cls._voltage_to_int(0)
-                    cls.write_sample(output, current_sample, dformat)
-        return output
+        return header
 
     @classmethod
     def _voltage_to_int(cls, v):
         return int(round(v/cls.V_PP_DC * 2**(cls.DAC_RESOLUTION_BITS-1)))
+
+    @classmethod
+    def _make_file_data(cls, n_blocks, padded_block_size, output_dict, dformat):
+
+        # ToDo: it feels like there must be a better way to organize the output_dict so that this is better
+
+        data = {}
+
+        for file_i, channel_list in cls.FILE_CHANNEL_POSITION.items():
+            file_output_array = [output_dict[ch] for ch in channel_list]
+
+            if dformat == 1:
+                output = io.StringIO()
+            elif dformat == 2:
+                output = io.BytesIO()
+            else:
+                raise RuntimeError(f"Variable dformat must be 1 (txt file) or 2 (bin file). Received {dformat}.")
+            # ToDo: I think just check that dformat has a correct value with a validator, instead of this over and over
+
+            for i_block in range(n_blocks):
+                for i_sample in range(padded_block_size):  # Assumption 3
+                    for i_channel in range(len(channel_list)):
+                        a = file_output_array[i_channel][i_block]
+                        try:
+                            current_sample = int(a[i_sample])
+                        except IndexError:
+                            current_sample = int(0)
+                        cls.write_sample(output, current_sample, dformat)
+
+            data[file_i] = output
+
+        return data
 
     @staticmethod
     def write_sample(stream, sample, dformat):
@@ -156,10 +229,15 @@ class AbacoDAC(IPInstrument):
         self.output_enabled = False
 
     def _is_new_waveform_shape(self, new_waveform):
-        # ToDo: talk to Ruben about how to retrieve current waveform shape info, make this function work
-        # needs to check if the new waveform file has the same shape as the previous one
-        # should return True if they have the same shape and the hardware does not need to be reconfigured
-        # should return False otherwise
+
+        self.ask('current_waveform_what_is_your_shape')
+        #ToDo: talk to Ruben about how to retrieve current waveform shape info, make this function work
+
+        self.get_waveform_shape(new_waveform)
+        # ToDo: create this function (what format does the new waveform have? is it a forged sequence? a summary?)
+
+        # ToDo: compare current and new waveforms, return False if they have the same shape, else True
+
         return True
 
     def _specify_file_for_upload(self, file):
@@ -189,8 +267,8 @@ class AbacoDAC(IPInstrument):
         print(f'Upload to FPGA completed in {time.clock()-start}')
 
     def run(self):
-        if not output_enabled:
-        # ToDo: only enable output if it isn't already enabled. 
+        if not self.output_enabled:
+        # ToDo: only reload output if it hasn't been enabled and disabled
             self._load_waveform_to_fpga()
             self._enable_output()
 
