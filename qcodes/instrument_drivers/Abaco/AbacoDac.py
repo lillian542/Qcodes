@@ -6,10 +6,13 @@ from math import ceil
 import shutil
 import time
 
+import time
+
 from qcodes.instrument.visa import VisaInstrument
+from qcodes.instrument.ip import IPInstrument
 
 
-class AbacoDAC(VisaInstrument):
+class AbacoDAC(IPInstrument):
     V_PP_DC = 1.7  # Data sheet FMC144 user manual p. 14
     V_PP_AC = 1.0  # Data sheet FMC144 user manual p. 14
     DAC_RESOLUTION_BITS = 16
@@ -19,17 +22,24 @@ class AbacoDAC(VisaInstrument):
 
     def __init__(self, name, address, port, *args, **kwargs) -> None:
         # address is TCPIP0::hostname::port::SOCKET
-        self._visa_address = "TCPIP0::{:s}::{:d}::SOCKET".format(address, port)
-        super().__init__(name, self._visa_address, terminator='', device_clear=False, **kwargs)
+        # self._visa_address = "TCPIP0::{:s}::{:d}::SOCKET".format(address, port)
+        # super().__init__(name, self._visa_address, terminator='', **kwargs)
+        super().__init__(name, address, port, *args, **kwargs, persistent=False, terminator='')
         # with self.temporary_timeout(11):
         #     print("asked returned {}".format(self.ask("init_state\n")))
-        #     print("asked returned {}".format(self.ask("init_state\n")))
+            #print("asked returned {}".format(self.ask("init_state\n")))
         # # cls.ask("init_state")
         # # time.sleep(1)
         # # cls.ask("config_state")
         # # glWaveFileMask=test_
         # pass
+        self.add_function('_initialize', call_cmd='init_state')
+        # ToDo: (Ruben) all of these things should throw an error if they don't work because the system is in the wrong state (currently error only prints to command terminal)
+        self.add_function('_hardware_configure', call_cmd='config_state')
+        self.add_function('_load_waveform_to_fpga', call_cmd='load_waveform_state')
 
+
+        self.output_enabled = False
 
     @contextmanager
     def temporary_timeout(self, timeout):
@@ -136,3 +146,59 @@ class AbacoDAC(VisaInstrument):
             print('{}'.format(sample), file=stream)
         elif dformat == 2:
             stream.write(sample.to_bytes(4, byteorder='big', signed=True))
+
+    def _enable_output(self):
+        self.ask('enable_offload_state')
+        self.output_enabled = True
+
+    def _disable_output(self):
+        self.ask('disable_offload_state')
+        self.output_enabled = False
+
+    def _is_new_waveform_shape(self, new_waveform):
+        # ToDo: talk to Ruben about how to retrieve current waveform shape info, make this function work
+        # needs to check if the new waveform file has the same shape as the previous one
+        # should return True if they have the same shape and the hardware does not need to be reconfigured
+        # should return False otherwise
+        return True
+
+    def _specify_file_for_upload(self, file):
+        #ToDo: talk to Ruben about how to specify which file to upload without accessing the GUI
+        pass
+
+    def upload_to_fpga(self, file=None):
+        # ToDo: select file to upload
+        # reuploads last used waveform if no file is specified
+        start = time.clock()
+        new_shape = self._is_new_waveform_shape(file)
+
+        # output must be disabled before any other change of intrument state can occur
+        self._disable_output()
+
+        self._specify_file_for_upload(file)
+
+        # must reinitialize and reconfigure hardware if the new waveform does not have the same basic shape (number of points, number of blocks)
+        if new_shape:
+            self._initialize()
+            time.sleep(80)
+            self._hardware_configure()
+            time.sleep(60)
+
+        self._load_waveform_to_fpga()
+        self._enable_output()
+        print(f'Upload to FPGA completed in {time.clock()-start}')
+
+    def run(self):
+        if not output_enabled:
+        # ToDo: only enable output if it isn't already enabled. 
+            self._load_waveform_to_fpga()
+            self._enable_output()
+
+        # ToDo: then start triggers? Or does run not make sense when the AWG only operates in external trigger mode?
+
+    def stop(self):
+        pass
+        # ToDo: should this disable output or just stop the triggers? If it disables output, you need to go back to upload before you can run again.
+
+
+
