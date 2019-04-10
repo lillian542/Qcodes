@@ -15,7 +15,7 @@ import qcodes.utils.validators as vals
 
 
 class AbacoDAC(IPInstrument):
-    MAX_V_PP = {'AC': 1.0, 'DC': 1.7} # Data sheet FMC144 user manual p. 14
+    MAX_V_PP = {'AC': 1.0, 'DC': 1.7}  # Data sheet FMC144 user manual p. 14
     DAC_RESOLUTION_BITS = 16
     SAMPLES_IN_BUFFER_DIVISOR = 4
     FILENAME = "test_{}.{}"
@@ -36,14 +36,15 @@ class AbacoDAC(IPInstrument):
         super().__init__(name, address, port, *args, **kwargs, persistent=False, terminator='')
         # with self.temporary_timeout(11):
         #     print("asked returned {}".format(self.ask("init_state\n")))
-            #print("asked returned {}".format(self.ask("init_state\n")))
+        #     print("asked returned {}".format(self.ask("init_state\n")))
         # # cls.ask("init_state")
         # # time.sleep(1)
         # # cls.ask("config_state")
         # # glWaveFileMask=test_
         # pass
         self.add_function('_initialize', call_cmd='init_state')
-        # ToDo: (Ruben) all of these things should throw an error if they don't work because the system is in the wrong state (currently error only prints to command terminal)
+        # ToDo: (Ruben) all of these should throw an error if they system is in the wrong state
+        # (currently error only prints to command terminal)
         self.add_function('_hardware_configure', call_cmd='config_state')
         self.add_function('_load_waveform_to_fpga', call_cmd='load_waveform_state')
 
@@ -76,7 +77,7 @@ class AbacoDAC(IPInstrument):
     def _is_new_waveform_shape(self, new_waveform):
 
         self.ask('current_waveform_what_is_your_shape')
-        #ToDo: talk to Ruben about how to retrieve current waveform shape info, make this function work
+        # ToDo: talk to Ruben about how to retrieve current waveform shape info, make this function work
 
         self.get_waveform_shape(new_waveform)
         # ToDo: create this function (what format does the new waveform have? is it a forged sequence? a summary?)
@@ -86,7 +87,7 @@ class AbacoDAC(IPInstrument):
         return True
 
     def _specify_file_for_upload(self, file):
-        #ToDo: talk to Ruben about how to specify which file to upload without accessing the GUI
+        # ToDo: talk to Ruben about how to specify which file to upload without accessing the GUI
         pass
 
     def upload_to_fpga(self, file=None):
@@ -100,7 +101,8 @@ class AbacoDAC(IPInstrument):
 
         self._specify_file_for_upload(file)
 
-        # must reinitialize and reconfigure hardware if the new waveform does not have the same basic shape (number of points, number of blocks)
+        # must reinitialize and reconfigure hardware if the new waveform does not have the same basic shape
+        # shape: (number of samples, number of blocks)
         if new_shape:
             self._initialize()
             time.sleep(80)
@@ -113,7 +115,7 @@ class AbacoDAC(IPInstrument):
 
     def run(self):
         if not self.output_enabled:
-        # ToDo: only reload output if it hasn't been enabled and disabled
+            # ToDo: only reload output if it hasn't been enabled and disabled
             self._load_waveform_to_fpga()
             self._enable_output()
 
@@ -121,7 +123,8 @@ class AbacoDAC(IPInstrument):
 
     def stop(self):
         pass
-        # ToDo: should this disable output or just stop the triggers? If it disables output, you need to go back to upload before you can run again.
+        # ToDo: should this disable output or just stop the triggers?
+        # If it disables output, you need to go back to upload before you can run again.
 
     ######################
     # AWG file functions #
@@ -150,7 +153,7 @@ class AbacoDAC(IPInstrument):
                 contents.seek(0)
                 shutil.copyfileobj(contents, fd)
 
-    def make_and_save_awg_file_locally(self, seq: List[np.ndarray], dformat: int) -> str:
+    def make_and_save_awg_file_locally(self, seq: List[np.ndarray], dformat: int):
         """
         This function produces a text data file for the abaco DAC that
         specifies the waveforms. Samples are represented by integer values.
@@ -201,7 +204,7 @@ class AbacoDAC(IPInstrument):
         block_size = max([len(a) for a in seq[0]['data'].values()])  # Assumption 2
 
         # create output dictionary containing list of output data for all channels, including padding on each element
-        output_dict = {ch: [] for ch in range(1, cls.NUM_CHANNELS + 1)}
+        output_dict = {ch: [] for ch in range(1, self.NUM_CHANNELS + 1)}
         for element in seq:
             for ch in output_dict:
                 for rep in range(element['sequencing']['nrep']):
@@ -272,7 +275,7 @@ class AbacoDAC(IPInstrument):
                 output = io.BytesIO()
             else:
                 raise RuntimeError(f"Variable dformat must be 1 (txt file) or 2 (bin file). Received {dformat}.")
-            # ToDo: I think just check that dformat has a correct value with a validator, instead of this over and over
+            # ToDo: I think just check that dformat has a correct value once, instead of this over and over - but where?
 
             for i_block in range(n_blocks):
                 for i_sample in range(padded_block_size):  # Assumption 3
