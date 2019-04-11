@@ -18,7 +18,7 @@ class AbacoDAC(IPInstrument):
     MAX_V_PP = {'AC': 1.0, 'DC': 1.7} # Data sheet FMC144 user manual p. 14
     DAC_RESOLUTION_BITS = 16
     SAMPLES_IN_BUFFER_DIVISOR = 4
-    FILENAME = "test_{}.{}"
+    FILENAME = "test"
 
     FILE_CHANNEL_POSITION = {
         '_0': [1, 2, 3, 4, 5, 6, 7, 8],
@@ -49,14 +49,32 @@ class AbacoDAC(IPInstrument):
 
         self.output_enabled = False
 
-        # ToDo: is this ridiculous and what does it mean anyway? And it should start as whatever the default will be...
-        self.add_parameter('voltage_coupling_mode',
-                           vals=vals.Enum('DC', 'AC'))
+    #     # ToDo: is this ridiculous and what does it mean anyway? And it should start as whatever the default will be...
+    #     self.add_parameter('voltage_coupling_mode',
+    #                        set_cmd=self.set_V_pp,
+    #                        get_cmd=self.get_V_pp,
+    #                        vals=vals.Enum('DC', 'AC'))
+    #     print(self.voltage_coupling_mode)
+    #     self.voltage_coupling_mode.set('DC')
+    #     print(self.voltage_coupling_mode)
+    #     # ToDo: this, like voltage coupling mode, needs to start out with some default
+    #     self.add_parameter('V_pp',
+    #                        set_cmd=self.set_V_pp,
+    #                        get_cmd=self.get_V_pp,
+    #                        label='Voltage peak-to-peak',
+    #                        vals=vals.Numbers(0, self.MAX_V_PP[self.voltage_coupling_mode]))
 
-        # ToDo: this, like voltage coupling mode, needs to start out with some default
-        self.add_parameter('V_pp',
-                           label='Voltage peak-to-peak',
-                           vals=vals.Numbers(0, self.max_allowed_voltage))
+    # def set_V_pp(self, val):
+    #     self.V_pp = val
+
+    # def get_V_pp(self):
+    #     return self.V_pp
+
+    # def set_voltage_coupling_mode(self, val):
+    #     self.voltage_coupling_mode = val
+
+    # def get_voltage_coupling_mode(self):
+    #     return self.voltage_coupling_mode
 
     @contextmanager
     def temporary_timeout(self, timeout):
@@ -128,7 +146,10 @@ class AbacoDAC(IPInstrument):
     ######################
 
     @classmethod
-    def _create_files(cls, header, data, dformat):
+    def _create_files(cls, header, data, dformat, filename=None):
+        if filename is None:
+            filename = cls.FILENAME
+
         if dformat == 1:
             file_access = 'w'
             file_type = 'txt'
@@ -141,16 +162,15 @@ class AbacoDAC(IPInstrument):
 
         # write files to disk
         for i in data:
-            print(i)
             contents = content_type()
             contents.write(header.getvalue())
             contents.write(data[i].getvalue())
 
-            with open(cls.FILENAME.format(i, file_type), file_access) as fd:
+            with open((filename + '{}.{}').format(i, file_type), file_access) as fd:
                 contents.seek(0)
                 shutil.copyfileobj(contents, fd)
 
-    def make_and_save_awg_file_locally(self, seq: List[np.ndarray], dformat: int) -> str:
+    def make_and_save_awg_file_locally(self, seq: List[np.ndarray], dformat: int, filename=None) -> str:
         """
         This function produces a text data file for the abaco DAC that
         specifies the waveforms. Samples are represented by integer values.
@@ -201,7 +221,7 @@ class AbacoDAC(IPInstrument):
         block_size = max([len(a) for a in seq[0]['data'].values()])  # Assumption 2
 
         # create output dictionary containing list of output data for all channels, including padding on each element
-        output_dict = {ch: [] for ch in range(1, cls.NUM_CHANNELS + 1)}
+        output_dict = {ch: [] for ch in range(1, self.NUM_CHANNELS + 1)}
         for element in seq:
             for ch in output_dict:
                 for rep in range(element['sequencing']['nrep']):
@@ -222,7 +242,7 @@ class AbacoDAC(IPInstrument):
 
         data = self._make_file_data(n_blocks, padded_block_size, output_dict, dformat)
 
-        self._create_files(header, data, dformat)
+        self._create_files(header, data, dformat, filename)
 
     @classmethod
     def _make_file_header(cls, n_blocks, total_num_samples, dformat: int, channels_per_file=8):
@@ -247,8 +267,11 @@ class AbacoDAC(IPInstrument):
 
         Returns an array of voltages (based on the current set peak-to-peak voltage) converted into twos-complement
         data, as required by the AWG."""
-
-        amplitude_scaling = self.Vpp/self.MAX_V_PP[self.voltage_coupling_mode]
+        # ToDo: fix this when adding setting peak-to-peak voltage
+        try:
+            amplitude_scaling = self.V_pp/self.MAX_V_PP[self.voltage_coupling_mode]
+        except:
+            amplitude_scaling = 1
         # ToDo: test this
         return (array * self.max_16b2c * amplitude_scaling).astype(int)
 
