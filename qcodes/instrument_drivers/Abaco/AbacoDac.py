@@ -18,7 +18,8 @@ class AbacoDAC(IPInstrument):
     MAX_V_PP = {'AC': 1.0, 'DC': 1.7}  # Data sheet FMC144 user manual p. 14
     DAC_RESOLUTION_BITS = 16
     SAMPLES_IN_BUFFER_DIVISOR = 4
-    FILENAME = "test"
+    FILENAME = "test{}.{}"
+    FILE_LOCATION = "//DESKTOP-LUEGMM9/Abaco_4DSP_waveforms/"
 
     FILE_CHANNEL_POSITION = {
         '_0': [1, 2, 3, 4, 5, 6, 7, 8],
@@ -50,6 +51,8 @@ class AbacoDAC(IPInstrument):
 
         self.output_enabled = False
 
+        # ToDo: check that the file for the waveforms can be located, useful error if not
+
     #     # ToDo: is this ridiculous and what does it mean anyway? And it should start as whatever the default will be...
     #     self.add_parameter('voltage_coupling_mode',
     #                        set_cmd=self.set_V_pp,
@@ -76,6 +79,8 @@ class AbacoDAC(IPInstrument):
 
     # def get_voltage_coupling_mode(self):
     #     return self.voltage_coupling_mode
+
+
 
     @contextmanager
     def temporary_timeout(self, timeout):
@@ -151,7 +156,9 @@ class AbacoDAC(IPInstrument):
     @classmethod
     def _create_files(cls, header, data, dformat, filename=None):
         if filename is None:
-            filename = cls.FILENAME
+            filepath = cls.FILE_LOCATION + cls.FILENAME
+        else:
+            filepath = cls.FILE_LOCATION + filename + '{}.{}'
 
         if dformat == 1:
             file_access = 'w'
@@ -169,7 +176,7 @@ class AbacoDAC(IPInstrument):
             contents.write(header.getvalue())
             contents.write(data[i].getvalue())
 
-            with open((filename + '{}.{}').format(i, file_type), file_access) as fd:
+            with open((filepath).format(i, file_type), file_access) as fd:
                 contents.seek(0)
                 shutil.copyfileobj(contents, fd)
 
