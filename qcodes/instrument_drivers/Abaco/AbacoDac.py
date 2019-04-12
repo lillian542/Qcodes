@@ -231,8 +231,8 @@ class AbacoDAC(IPInstrument):
         used_channels = [ch for ch in seq[0]['data'].keys()]
         for ch in used_channels:
             if ch not in range(1, self.NUM_CHANNELS+1):
-                warnings.warn(f"Unknown channel specified: {ch}. AWG has channels 1-{self.NUM_CHANNELS+1}. "
-                              f"Data for {ch} will not be uploaded")
+                warnings.warn(f"Unknown channel specified: {ch}. AWG has channels 1-{self.NUM_CHANNELS}. "
+                              f"Data for {ch} will not be uploaded.")
 
         # get element size (size of longest channel output array)
         block_size = max([len(a) for a in seq[0]['data'].values()])  # Assumption 2
