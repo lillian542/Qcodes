@@ -7,6 +7,7 @@ import shutil
 import time
 import sys
 import time
+import warnings
 
 from qcodes.instrument.visa import VisaInstrument
 from qcodes.instrument.ip import IPInstrument
@@ -226,6 +227,12 @@ class AbacoDAC(IPInstrument):
 
         # ToDo: currently the forged sequences are output with both channels and markers.
         #       The marker names in the forged sequence will need to be converted to channel numbers to upload here
+
+        used_channels = [ch for ch in seq[0]['data'].keys()]
+        for ch in used_channels:
+            if ch not in range(1, self.NUM_CHANNELS+1):
+                warnings.warn(f"Unknown channel specified: {ch}. AWG has channels 1-{self.NUM_CHANNELS+1}. "
+                              f"Data for {ch} will not be uploaded")
 
         # get element size (size of longest channel output array)
         block_size = max([len(a) for a in seq[0]['data'].values()])  # Assumption 2
