@@ -248,6 +248,8 @@ class AbacoDAC(IPInstrument):
         padded_block_size = -(-block_size // d) * d
         total_num_samples = padded_block_size * n_blocks
 
+        # ToDo: check dformat value is okay here, then pass it on to other things - or maybe pass on StringIO or ByteIO?
+
         header = self._make_file_header(n_blocks, total_num_samples, dformat)
 
         data = self._make_file_data(n_blocks, padded_block_size, output_dict, dformat)
@@ -278,6 +280,7 @@ class AbacoDAC(IPInstrument):
         Returns an array of voltages (based on the current set peak-to-peak voltage) converted into twos-complement
         data, as required by the AWG."""
         # ToDo: fix this when adding setting peak-to-peak voltage
+        # ToDo: make this channel specific, as peak to peak voltage could be set per channel
         try:
             amplitude_scaling = self.V_pp/self.MAX_V_PP[self.voltage_coupling_mode]
         except:
