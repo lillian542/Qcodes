@@ -5,7 +5,7 @@ from typing import List
 from math import ceil
 import shutil
 import time
-
+import sys
 import time
 
 from qcodes.instrument.visa import VisaInstrument
@@ -266,9 +266,10 @@ class AbacoDAC(IPInstrument):
         else:
             raise RuntimeError(f"Variable dformat must be 1 (for txt file) or 2 (for bin file). Received {dformat}.")
 
-        cls.write_sample(header, n_blocks, dformat)
+        # if binary, header data is 4 byte unsigned integers, instead of default 2 byte signed used for remaining data
+        cls.write_sample(header, n_blocks, dformat, bytes=4, signed=False)
         for i in range(channels_per_file):
-            cls.write_sample(header, total_num_samples, dformat)
+            cls.write_sample(header, total_num_samples, dformat, bytes=4, signed=False)
 
         return header
 
@@ -322,8 +323,8 @@ class AbacoDAC(IPInstrument):
         return data
 
     @staticmethod
-    def write_sample(stream, sample, dformat):
+    def write_sample(stream, sample, dformat, bytes=2, signed=True):
         if dformat == 1:
             print('{}'.format(sample), file=stream)
         elif dformat == 2:
-            stream.write(sample.to_bytes(4, byteorder='big', signed=True))
+            stream.write(sample.to_bytes(bytes, byteorder=sys.byteorder, signed=signed))
