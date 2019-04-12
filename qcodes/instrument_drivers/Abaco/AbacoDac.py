@@ -99,10 +99,10 @@ class AbacoDAC(IPInstrument):
 
     def _is_new_waveform_shape(self, new_waveform):
 
-        self.ask('current_waveform_what_is_your_shape')
+        # self.ask('current_waveform_what_is_your_shape')
         # ToDo: talk to Ruben about how to retrieve current waveform shape info, make this function work
 
-        self.get_waveform_shape(new_waveform)
+        # self.get_waveform_shape(new_waveform)
         # ToDo: create this function (what format does the new waveform have? is it a forged sequence? a summary?)
 
         # ToDo: compare current and new waveforms, return False if they have the same shape, else True
