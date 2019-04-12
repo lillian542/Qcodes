@@ -22,7 +22,7 @@ class AbacoDAC(IPInstrument):
     FILE_LOCATION = "//DESKTOP-LUEGMM9/Abaco_4DSP_waveforms/"
 
     FILE_CHANNEL_POSITION = {
-        '_0': [2, 6, 10, 14, 1, 5, 9, 13]
+        '_0': [2, 6, 10, 14, 1, 5, 9, 13],
         '_1': [4, 8, 12, 16, 3, 7, 11, 15]
     }
 
