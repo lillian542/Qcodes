@@ -63,7 +63,8 @@ class AbacoDAC(IPInstrument):
         #self._initialize()
         # ToDo: it would be better if it only initialized if it weren't already initialized - its time consuming and restarting the kernel doesn't require reinitializing the instrument
         # maybe just add reinitialize_hardware argument, and initialize and set state within that? But better if it comes from the instrument...
-        #self._specify_file(file='initial_file')
+        self.add_parameter('max_trigger_freq',
+                            get_cmd = self._get_max_trigger_freq)
 
         print("Abaco connected")
 
@@ -178,6 +179,13 @@ class AbacoDAC(IPInstrument):
             total_num_samples = int(next(f).strip('\n'))
 
         return (num_elements, total_num_samples) # (number of elements, total number of samples per channel)
+
+    def _get_max_trigger_freq(self):
+        total_samples = self._shape[1]
+        waveform_size_bytes = total_samples * 2
+        max_data_rate_per_channel = (12.16/8)* 10e9
+
+        return max_data_rate_per_channel/waveform_size_bytes
 
     def upload_to_fpga(self, file=None):
         # ToDo: select file to upload
