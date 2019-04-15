@@ -29,6 +29,13 @@ class AbacoDAC(IPInstrument):
 
     NUM_CHANNELS = 8 * len(FILE_CHANNEL_POSITION)
 
+    STATES = {0: 'not_initialized',
+              1: 'initialized',
+              2: 'hardware_configured',
+              3: 'wavefrom_uploaded',
+              4: 'output_enabled',
+              5: 'output_disabled'}  # This seems not useful for anything except reading the code about the order of the functions more easily
+
     max_16b2c = 32767
 
     def __init__(self, name, address, port, *args, **kwargs) -> None:
@@ -44,13 +51,15 @@ class AbacoDAC(IPInstrument):
         # # cls.ask("config_state")
         # # glWaveFileMask=test_
         # pass
-        self.add_function('_initialize', call_cmd='init_state')
-        # ToDo: (Ruben) all of these should throw an error if they system is in the wrong state
-        # (currently error only prints to command terminal)
-        self.add_function('_hardware_configure', call_cmd='config_state')
-        self.add_function('_load_waveform_to_fpga', call_cmd='load_waveform_state')
 
-        self.output_enabled = False
+        self._state = 2
+        self._shape = {}
+
+        #self._initialize()
+        # ToDo: it would be better if it only initialized if it weren't already initialized - its time consuming and restarting the kernel doesn't require reinitializing the instrument
+        #self._specify_file(file='initial_file')
+
+        print("Abaco connected")
 
         # ToDo: check that the file for the waveforms can be located, useful error if not
 
@@ -81,6 +90,54 @@ class AbacoDAC(IPInstrument):
     # def get_voltage_coupling_mode(self):
     #     return self.voltage_coupling_mode
 
+    def _initialize(self):
+        self.ask('init_state')
+        time.sleep(80)  # ToDo: do this with temporary timeout instead? How do timeouts work for instruments?
+        self._state = 1
+
+    def _configure_hardware(self):
+        self.ask('config_state')
+        time.sleep(60)
+        self._state = 2
+
+    def _specify_file(self, file):
+        # ToDo: talk to Ruben about how to specify which file to upload without accessing the GUI
+        pass
+
+    def _load_waveform_to_fpga(self):
+        self.ask('load_waveform_state')
+        self._state = 3
+        self._shape = {}  # ToDo: add shape!
+
+    def load_waveform(self, new_waveform=None):
+        if new_waveform is not None:
+            self._specify_file(new_waveform)
+
+        if self._state < 2 or self._is_new_waveform_shape(new_waveform):
+            self._configure_hardware()
+        elif self._state == 4:
+            self._disable_output()
+
+        self._load_waveform_to_fpga()
+
+        self._state = 3
+        self._shape = {}  # ToDo: add shape!
+
+    def _enable_output(self):
+        if self._state != 3:
+            raise RuntimeError('Waveform not uploaded, cannot enable output') # ToDo: change this to reupload current file?
+
+        self.ask('enable_offload_state')
+
+        self._state = 4
+
+    def _disable_output(self):
+        if self._state != 4:
+            raise RuntimeError("Waveform output not enabled, cannot disable output")
+
+        self.ask('disable_offload_state')
+
+        self._state = 5
 
 
     @contextmanager
@@ -90,29 +147,22 @@ class AbacoDAC(IPInstrument):
         yield
         self.set_timeout(old_timeout)
 
-    def _enable_output(self):
-        self.ask('enable_offload_state')
-        self.output_enabled = True
-
-    def _disable_output(self):
-        self.ask('disable_offload_state')
-        self.output_enabled = False
-
     def _is_new_waveform_shape(self, new_waveform):
 
-        # self.ask('current_waveform_what_is_your_shape')
-        # ToDo: talk to Ruben about how to retrieve current waveform shape info, make this function work
+        if new_waveform is None:
+            return False
+        
+        current_shape = self._shape
 
-        # self.get_waveform_shape(new_waveform)
-        # ToDo: create this function (what format does the new waveform have? is it a forged sequence? a summary?)
+        self.get_waveform_shape(new_waveform)
 
         # ToDo: compare current and new waveforms, return False if they have the same shape, else True
 
         return True
 
-    def _specify_file_for_upload(self, file):
-        # ToDo: talk to Ruben about how to specify which file to upload without accessing the GUI
-        pass
+    def get_waveform_shape(filename):
+        # ToDo: create this function (what format does the new waveform have? is it a forged sequence? a summary?)
+        return {}
 
     def upload_to_fpga(self, file=None):
         # ToDo: select file to upload
@@ -131,7 +181,7 @@ class AbacoDAC(IPInstrument):
             self._initialize()
             time.sleep(80)
             self._hardware_configure()
-            time.sleep(60)
+            
 
         self._load_waveform_to_fpga()
         self._enable_output()
