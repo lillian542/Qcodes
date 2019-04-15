@@ -4,7 +4,6 @@ import io
 from typing import List
 from math import ceil
 import shutil
-import time
 import sys
 import time
 import warnings
@@ -43,7 +42,7 @@ class AbacoDAC(IPInstrument):
         # address is TCPIP0::hostname::port::SOCKET
         # self._visa_address = "TCPIP0::{:s}::{:d}::SOCKET".format(address, port)
         # super().__init__(name, self._visa_address, terminator='', **kwargs)
-        super().__init__(name, address, port, *args, **kwargs, persistent=False, terminator='')
+        super().__init__(name, address, port, **kwargs, persistent=False, terminator='')
         # with self.temporary_timeout(11):
         #     print("asked returned {}".format(self.ask("init_state\n")))
         #     print("asked returned {}".format(self.ask("init_state\n")))
@@ -53,14 +52,14 @@ class AbacoDAC(IPInstrument):
         # # glWaveFileMask=test_
         # pass
         # ToDo: decide on shape for initial file
-        self._specify_file('initial_file')
+        self._specify_file(initial_file)
         self.load_waveform()
 
         # ToDo: if we don't want to reinitialize every time we restart the kernel, we will need a way of asking for the current state
-        self._shape = self.get_waveform_shape('initial_file')
+        self._shape = self.get_waveform_shape(initial_file)
         # ToDo: if we don't want to reconfigure every time we start up, we will need a way of asking the current waveform shape as well
 
-        #self._initialize()
+        # self._initialize()
         # ToDo: it would be better if it only initialized if it weren't already initialized - its time consuming and restarting the kernel doesn't require reinitializing the instrument
         # maybe just add reinitialize_hardware argument, and initialize and set state within that? But better if it comes from the instrument...
         self.add_parameter('max_trigger_freq',
@@ -108,7 +107,7 @@ class AbacoDAC(IPInstrument):
         self._state = 2
 
     def _specify_file(self, filename):
-        file_mask = f"{file}_"
+        file_mask = f"{filename}_"
         self.ask(f"glWaveFileMask={file_mask}")
 
     def _load_waveform_to_fpga(self):
@@ -155,16 +154,13 @@ class AbacoDAC(IPInstrument):
 
     def _is_new_waveform_shape(self, new_waveform):
 
-        if new_waveform is None:
-            return False
-        
-        current_shape = self._shape
+        if new_waveform is not None:
+            new_shape = self.get_waveform_shape(new_waveform)
 
-        self.get_waveform_shape(new_waveform)
+            if new_shape != self._shape:
+                return True
 
-        # ToDo: compare current and new waveforms, return False if they have the same shape, else True
-
-        return True
+        return False
 
     @classmethod
     def get_waveform_shape(cls, filename, dformat=1):
@@ -178,12 +174,12 @@ class AbacoDAC(IPInstrument):
             num_elements = int(next(f).strip('\n'))
             total_num_samples = int(next(f).strip('\n'))
 
-        return (num_elements, total_num_samples) # (number of elements, total number of samples per channel)
+        return [num_elements, total_num_samples]  # (number of elements, total number of samples per channel)
 
     def _get_max_trigger_freq(self):
         total_samples = self._shape[1]
         waveform_size_bytes = total_samples * 2
-        max_data_rate_per_channel = (12.16/8)* 10e9
+        max_data_rate_per_channel = (12.16/8) * 10e9
 
         return max_data_rate_per_channel/waveform_size_bytes
 
@@ -204,7 +200,6 @@ class AbacoDAC(IPInstrument):
             self._initialize()
             time.sleep(80)
             self._hardware_configure()
-            
 
         self._load_waveform_to_fpga()
         self._enable_output()
@@ -250,7 +245,7 @@ class AbacoDAC(IPInstrument):
             contents.write(header.getvalue())
             contents.write(data[i].getvalue())
 
-            with open((filepath).format(i, file_type), file_access) as fd:
+            with open(filepath.format(i, file_type), file_access) as fd:
                 contents.seek(0)
                 shutil.copyfileobj(contents, fd)
 
