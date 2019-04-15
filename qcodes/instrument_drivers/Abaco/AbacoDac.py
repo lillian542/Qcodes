@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 import numpy as np
 import io
+import os
 from typing import List
 from math import ceil
 import shutil
@@ -38,7 +39,6 @@ class AbacoDAC(IPInstrument):
     max_16b2c = 32767
 
     def __init__(self, name, address, port, initial_file='initial_file', **kwargs) -> None:
-        # ToDo: add 'initial_file' kwarg, use that to get shape
         # address is TCPIP0::hostname::port::SOCKET
         # self._visa_address = "TCPIP0::{:s}::{:d}::SOCKET".format(address, port)
         # super().__init__(name, self._visa_address, terminator='', **kwargs)
@@ -51,25 +51,28 @@ class AbacoDAC(IPInstrument):
         # # cls.ask("config_state")
         # # glWaveFileMask=test_
         # pass
-        # ToDo: decide on shape for initial file
-        self._specify_file(initial_file)
-        self.load_waveform()
-
-        # ToDo: if we don't want to reinitialize every time we restart the kernel, we will need a way of asking for the current state
-        self._shape = self.get_waveform_shape(initial_file)
-        # ToDo: if we don't want to reconfigure every time we start up, we will need a way of asking the current waveform shape as well
 
         # self._initialize()
-        # ToDo: it would be better if it only initialized if it weren't already initialized - its time consuming and restarting the kernel doesn't require reinitializing the instrument
-        # maybe just add reinitialize_hardware argument, and initialize and set state within that? But better if it comes from the instrument...
+        # ToDo: decide whether to initialize/configure based on get_state function
+
+        # ToDo: decide on shape for initial file
+        self._specify_file(initial_file)
+        # self._configure_hardware()
+
+        self._state = 2
+        self.load_waveform()
+
+        self._shape = self.get_waveform_shape(initial_file)
+
         self.add_parameter('max_trigger_freq',
-                            get_cmd = self._get_max_trigger_freq)
+                           get_cmd=self._get_max_trigger_freq)
+
+        if not os.path.exists(self.FILE_LOCATION):
+            raise RuntimeError(f"The specified waveform file location, {self.FILE_LOCATION}, does not exist.")
 
         print("Abaco connected")
 
-        # ToDo: check that the file for the waveforms can be located, useful error if not
-
-    #     # ToDo: is this ridiculous and what does it mean anyway? And it should start as whatever the default will be...
+    #     # ToDo: add option to set amplitude and offset by channel
     #     self.add_parameter('voltage_coupling_mode',
     #                        set_cmd=self.set_V_pp,
     #                        get_cmd=self.get_V_pp,
@@ -77,22 +80,17 @@ class AbacoDAC(IPInstrument):
     #     print(self.voltage_coupling_mode)
     #     self.voltage_coupling_mode.set('DC')
     #     print(self.voltage_coupling_mode)
-    #     # ToDo: this, like voltage coupling mode, needs to start out with some default
     #     self.add_parameter('V_pp',
     #                        set_cmd=self.set_V_pp,
     #                        get_cmd=self.get_V_pp,
     #                        label='Voltage peak-to-peak',
     #                        vals=vals.Numbers(0, self.MAX_V_PP[self.voltage_coupling_mode]))
-
     # def set_V_pp(self, val):
     #     self.V_pp = val
-
     # def get_V_pp(self):
     #     return self.V_pp
-
     # def set_voltage_coupling_mode(self, val):
     #     self.voltage_coupling_mode = val
-
     # def get_voltage_coupling_mode(self):
     #     return self.voltage_coupling_mode
 
@@ -115,23 +113,33 @@ class AbacoDAC(IPInstrument):
         self._state = 3
         self._shape = {}  # ToDo: add shape!
 
-    def load_waveform(self, new_waveform=None):
-        if new_waveform is not None:
-            self._specify_file(new_waveform)
+    def load_waveform(self, new_waveform_file=None):
+        if new_waveform_file is not None:
+            self._specify_file(new_waveform_file)
 
-        if self._state < 2 or self._is_new_waveform_shape(new_waveform):
+        if self._state < 2 or self._is_new_waveform_shape(new_waveform_file):
             self._configure_hardware()
         elif self._state == 4:
             self._disable_output()
+
+        self._specify_file(new_waveform_file)
 
         self._load_waveform_to_fpga()
 
         self._state = 3
         self._shape = {}  # ToDo: add shape!
 
+    def upload_to_fpga(self, file=None):
+        # re-uploads last used waveform if no file is specified
+        start = time.clock()
+        self.load_waveform(file)
+        self._enable_output()
+        print(f'Upload to FPGA completed in {time.clock()-start}')
+
     def _enable_output(self):
         if self._state != 3:
-            raise RuntimeError('Waveform not uploaded, cannot enable output') # ToDo: change this to reupload current file?
+            raise RuntimeError('Waveform not uploaded, cannot enable output')
+            # ToDo: change this to re-upload current file?
 
         self.ask('enable_offload_state')
 
@@ -164,7 +172,7 @@ class AbacoDAC(IPInstrument):
 
     @classmethod
     def get_waveform_shape(cls, filename, dformat=1):
-        # ToDo: what if the file is binary?
+        # ToDo: rewrite this to get shape from get_state function
         filepath = cls.FILE_LOCATION + filename + '_0.txt'
 
         if dformat == 2:
@@ -183,40 +191,14 @@ class AbacoDAC(IPInstrument):
 
         return max_data_rate_per_channel/waveform_size_bytes
 
-    def upload_to_fpga(self, file=None):
-        # ToDo: select file to upload
-        # reuploads last used waveform if no file is specified
-        start = time.clock()
-        new_shape = self._is_new_waveform_shape(file)
-
-        # output must be disabled before any other change of intrument state can occur
-        self._disable_output()
-
-        self._specify_file_for_upload(file)
-
-        # must reinitialize and reconfigure hardware if the new waveform does not have the same basic shape
-        # shape: (number of samples, number of blocks)
-        if new_shape:
-            self._initialize()
-            time.sleep(80)
-            self._hardware_configure()
-
-        self._load_waveform_to_fpga()
-        self._enable_output()
-        print(f'Upload to FPGA completed in {time.clock()-start}')
-
     def run(self):
-        if not self.output_enabled:
-            # ToDo: only reload output if it hasn't been enabled and disabled
-            self._load_waveform_to_fpga()
-            self._enable_output()
-
+        self.load_waveform()
+        self._enable_output()
         # ToDo: then start triggers? Or does run not make sense when the AWG only operates in external trigger mode?
 
     def stop(self):
-        pass
+        self._disable_output()
         # ToDo: should this disable output or just stop the triggers?
-        # If it disables output, you need to go back to upload before you can run again.
 
     ######################
     # AWG file functions #
@@ -292,10 +274,6 @@ class AbacoDAC(IPInstrument):
             3. The total number of samples (i.e. block or element size) is the same for all channels
 
         """
-
-        # ToDo: currently the forged sequences are output with both channels and markers.
-        #       The marker names in the forged sequence will need to be converted to channel numbers to upload here
-
         used_channels = [ch for ch in seq[0]['data'].keys()]
         for ch in used_channels:
             if ch not in range(1, self.NUM_CHANNELS+1):
