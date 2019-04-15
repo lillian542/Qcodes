@@ -19,8 +19,9 @@ class AbacoDAC(IPInstrument):
     MAX_V_PP = {'AC': 1.0, 'DC': 1.7}  # Data sheet FMC144 user manual p. 14
     DAC_RESOLUTION_BITS = 16
     SAMPLES_IN_BUFFER_DIVISOR = 4
-    FILENAME = "test{}.{}"
-    FILE_LOCATION = "//DESKTOP-LUEGMM9/Abaco_4DSP_waveforms/"
+    FILENAME = "test"
+    FILE_LOCATION_FROM_CONTROL = "//DESKTOP-LUEGMM9/Abaco_4DSP_waveforms/"
+    FILE_LOCATION_FROM_AWG = "C:\\Abaco_4DSP_waveforms\\"
 
     FILE_CHANNEL_POSITION = {
         '_0': [2, 6, 10, 14, 1, 5, 9, 13],
@@ -38,7 +39,7 @@ class AbacoDAC(IPInstrument):
 
     max_16b2c = 32767
 
-    def __init__(self, name, address, port, initial_file='initial_file', **kwargs) -> None:
+    def __init__(self, name, address, port, initial_file='initial_file', dformat=1, new_initialization=True, **kwargs) -> None:
         # address is TCPIP0::hostname::port::SOCKET
         # self._visa_address = "TCPIP0::{:s}::{:d}::SOCKET".format(address, port)
         # super().__init__(name, self._visa_address, terminator='', **kwargs)
@@ -52,23 +53,29 @@ class AbacoDAC(IPInstrument):
         # # glWaveFileMask=test_
         # pass
 
-        # self._initialize()
-        # ToDo: decide whether to initialize/configure based on get_state function
+        if not os.path.exists(self.FILE_LOCATION_FROM_CONTROL):
+            raise RuntimeError(f"The specified waveform file location, {self.FILE_LOCATION_FROM_CONTROL}, does not exist.")
 
         # ToDo: decide on shape for initial file
-        self._specify_file(initial_file)
-        # self._configure_hardware()
+        self.dformat=dformat
+        self.file_extensions = {1: '.txt', 2: '.bin'}
+        self.ask(f'glWaveFileExtension={self.file_extensions[dformat]}')
+        self.ask(f'glWaveFileFolder={self.FILE_LOCATION_FROM_AWG}')
+        self.select_file(initial_file)
+
+        if new_initialization:
+            # ToDo: decide whether to initialize/configure based on get_state function
+            self._initialize()
+            self._configure_hardware()
 
         self._state = 2
-        self.load_waveform()
+        self.load_waveform_from_file()
 
         self._shape = self.get_waveform_shape(initial_file)
 
-        self.add_parameter('max_trigger_freq',
+        self.add_parameter('max_trigger_freq', 
+                           unit = 'Hz',
                            get_cmd=self._get_max_trigger_freq)
-
-        if not os.path.exists(self.FILE_LOCATION):
-            raise RuntimeError(f"The specified waveform file location, {self.FILE_LOCATION}, does not exist.")
 
         print("Abaco connected")
 
@@ -94,6 +101,13 @@ class AbacoDAC(IPInstrument):
     # def get_voltage_coupling_mode(self):
     #     return self.voltage_coupling_mode
 
+    @contextmanager
+    def temporary_timeout(self, timeout):
+        old_timeout = self._timeout
+        self.set_timeout(timeout)
+        yield
+        self.set_timeout(old_timeout)
+
     def _initialize(self):
         self.ask('init_state')
         time.sleep(80)  # ToDo: do this with temporary timeout instead? How do timeouts work for instruments?
@@ -104,37 +118,20 @@ class AbacoDAC(IPInstrument):
         time.sleep(60)
         self._state = 2
 
-    def _specify_file(self, filename):
+    def _set_file_mask(self, filename):
         file_mask = f"{filename}_"
         self.ask(f"glWaveFileMask={file_mask}")
+
+    def _set_file_type(self, dformat):
+        if dformat is None:
+            dformat=self.dformat
+        self.ask(f'glWaveFileExtension={self.file_extensions[dformat]}')
+        # ToDo: I belive it needs to reconfigure if dformat is changed
 
     def _load_waveform_to_fpga(self):
         self.ask('load_waveform_state')
         self._state = 3
         self._shape = {}  # ToDo: add shape!
-
-    def load_waveform(self, new_waveform_file=None):
-        if new_waveform_file is not None:
-            self._specify_file(new_waveform_file)
-
-        if self._state < 2 or self._is_new_waveform_shape(new_waveform_file):
-            self._configure_hardware()
-        elif self._state == 4:
-            self._disable_output()
-
-        self._specify_file(new_waveform_file)
-
-        self._load_waveform_to_fpga()
-
-        self._state = 3
-        self._shape = {}  # ToDo: add shape!
-
-    def upload_to_fpga(self, file=None):
-        # re-uploads last used waveform if no file is specified
-        start = time.clock()
-        self.load_waveform(file)
-        self._enable_output()
-        print(f'Upload to FPGA completed in {time.clock()-start}')
 
     def _enable_output(self):
         if self._state != 3:
@@ -153,12 +150,16 @@ class AbacoDAC(IPInstrument):
 
         self._state = 5
 
-    @contextmanager
-    def temporary_timeout(self, timeout):
-        old_timeout = self._timeout
-        self.set_timeout(timeout)
-        yield
-        self.set_timeout(old_timeout)
+    def _get_max_trigger_freq(self):
+        # ToDo: update to access get_state function?
+        num_elements = self._shape[0]
+        total_samples = self._shape[1]
+
+        samples_per_waveform = total_samples/num_elements
+        waveform_size_bytes = samples_per_waveform * 2
+        max_data_rate_per_channel = (12.16/8) * 10e9  # 4DSP verification records pg 16
+
+        return {'waveform_size_bytes': waveform_size_bytes, 'max_trigger_freq': int(max_data_rate_per_channel/waveform_size_bytes)}
 
     def _is_new_waveform_shape(self, new_waveform):
 
@@ -173,7 +174,7 @@ class AbacoDAC(IPInstrument):
     @classmethod
     def get_waveform_shape(cls, filename, dformat=1):
         # ToDo: rewrite this to get shape from get_state function
-        filepath = cls.FILE_LOCATION + filename + '_0.txt'
+        filepath = cls.FILE_LOCATION_FROM_CONTROL + filename + '_0.txt'
 
         if dformat == 2:
             raise RuntimeError('Not sure how to extract shape from binary data file yet')
@@ -184,15 +185,28 @@ class AbacoDAC(IPInstrument):
 
         return [num_elements, total_num_samples]  # (number of elements, total number of samples per channel)
 
-    def _get_max_trigger_freq(self):
-        total_samples = self._shape[1]
-        waveform_size_bytes = total_samples * 2
-        max_data_rate_per_channel = (12.16/8) * 10e9
+    def load_waveform_from_file(self, new_waveform_file=None):
+        if new_waveform_file is not None:
+            self.select_file(new_waveform_file)
 
-        return max_data_rate_per_channel/waveform_size_bytes
+        if self._state < 2 or self._is_new_waveform_shape(new_waveform_file):
+            self._configure_hardware()
+        elif self._state == 4:
+            self._disable_output()
+
+        # ToDo: It also needs to reconfigure in order to switch between text and binary formats
+
+        self._load_waveform_to_fpga()
+
+        self._state = 3
+        self._shape = {}  # ToDo: add shape!
+
+    def select_file(self, filename, dformat=None):
+        self._set_file_type(dformat)
+        self._set_file_mask(filename)
 
     def run(self):
-        self.load_waveform()
+        self.load_waveform_from_file()
         self._enable_output()
         # ToDo: then start triggers? Or does run not make sense when the AWG only operates in external trigger mode?
 
@@ -204,34 +218,7 @@ class AbacoDAC(IPInstrument):
     # AWG file functions #
     ######################
 
-    @classmethod
-    def _create_files(cls, header, data, dformat, filename=None):
-        if filename is None:
-            filepath = cls.FILE_LOCATION + cls.FILENAME
-        else:
-            filepath = cls.FILE_LOCATION + filename + '{}.{}'
-
-        if dformat == 1:
-            file_access = 'w'
-            file_type = 'txt'
-            content_type = io.StringIO
-        else:
-            file_access = 'wb'
-            file_type = 'bin'
-            # ToDo: is this correct?
-            content_type = io.BytesIO
-
-        # write files to disk
-        for i in data:
-            contents = content_type()
-            contents.write(header.getvalue())
-            contents.write(data[i].getvalue())
-
-            with open(filepath.format(i, file_type), file_access) as fd:
-                contents.seek(0)
-                shutil.copyfileobj(contents, fd)
-
-    def make_and_save_awg_file_locally(self, seq: List[np.ndarray], dformat: int, filename=None):
+    def make_and_send_awg_file(self, seq: List[np.ndarray], dformat: int, filename=None):
         """
         This function produces a text data file for the abaco DAC that
         specifies the waveforms. Samples are represented by integer values.
@@ -328,24 +315,6 @@ class AbacoDAC(IPInstrument):
 
         return header
 
-    def forged_seq_array_to_16b2c(self, array):
-        """Takes an array with values between -1 and 1, where 1 specifies max voltage and -1 min voltage.
-
-        Returns an array of voltages (based on the current set peak-to-peak voltage) converted into twos-complement
-        data, as required by the AWG."""
-        # ToDo: fix this when adding setting peak-to-peak voltage
-        # ToDo: make this channel specific, as peak to peak voltage could be set per channel
-        try:
-            amplitude_scaling = self.V_pp/self.MAX_V_PP[self.voltage_coupling_mode]
-        except:
-            amplitude_scaling = 1
-        # ToDo: test this
-        return (array * self.max_16b2c * amplitude_scaling).astype(int)
-
-    @classmethod
-    def _voltage_to_int(cls, v):
-        return int(round(v / cls.V_PP_DC * 2 ** (cls.DAC_RESOLUTION_BITS - 1)))
-
     @classmethod
     def _make_file_data(cls, n_blocks, padded_block_size, output_dict, dformat):
 
@@ -378,9 +347,53 @@ class AbacoDAC(IPInstrument):
 
         return data
 
+    @classmethod
+    def _create_files(cls, header, data, dformat, filename=None):
+        if filename is None:
+            filename = cls.FILENAME
+        
+        filepath = cls.FILE_LOCATION_FROM_CONTROL + filename + '{}.{}'
+
+        if dformat == 1:
+            file_access = 'w'
+            file_type = 'txt'
+            content_type = io.StringIO
+        else:
+            file_access = 'wb'
+            file_type = 'bin'
+            content_type = io.BytesIO
+
+        # write files to disk
+        for i in data:
+            contents = content_type()
+            contents.write(header.getvalue())
+            contents.write(data[i].getvalue())
+
+            with open(filepath.format(i, file_type), file_access) as fd:
+                contents.seek(0)
+                shutil.copyfileobj(contents, fd)
+
     @staticmethod
     def write_sample(stream, sample, dformat, bytes=2, signed=True):
         if dformat == 1:
             print('{}'.format(sample), file=stream)
         elif dformat == 2:
             stream.write(sample.to_bytes(bytes, byteorder=sys.byteorder, signed=signed))
+
+    def forged_seq_array_to_16b2c(self, array):
+        """Takes an array with values between -1 and 1, where 1 specifies max voltage and -1 min voltage.
+
+        Returns an array of voltages (based on the current set peak-to-peak voltage) converted into twos-complement
+        data, as required by the AWG."""
+        # ToDo: fix this when adding setting peak-to-peak voltage
+        # ToDo: make this channel specific, as peak to peak voltage could be set per channel
+        try:
+            amplitude_scaling = self.V_pp/self.MAX_V_PP[self.voltage_coupling_mode]
+        except:
+            amplitude_scaling = 1
+        # ToDo: test this
+        return (array * self.max_16b2c * amplitude_scaling).astype(int)
+
+    @classmethod
+    def _voltage_to_int(cls, v):
+        return int(round(v / cls.V_PP_DC * 2 ** (cls.DAC_RESOLUTION_BITS - 1)))
