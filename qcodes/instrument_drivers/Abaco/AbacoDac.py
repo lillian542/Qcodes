@@ -153,7 +153,7 @@ class AbacoDAC(IPInstrument):
 
         samples_per_waveform = total_samples/num_elements
         waveform_size_bytes = samples_per_waveform * 2
-        max_data_rate_per_channel = (12.16/8) * 10e9  # 4DSP verification records pg 16
+        max_data_rate_per_channel = (12.16/8) * 1e9  # 4DSP verification records pg 16
 
         return int(max_data_rate_per_channel/waveform_size_bytes)
 
