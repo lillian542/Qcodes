@@ -39,6 +39,7 @@ class AbacoDAC(IPInstrument):
     max_16b2c = 32767
 
     def __init__(self, name, address, port, *args, **kwargs) -> None:
+        # ToDo: add 'initial_file' kwarg, use that to get shape
         # address is TCPIP0::hostname::port::SOCKET
         # self._visa_address = "TCPIP0::{:s}::{:d}::SOCKET".format(address, port)
         # super().__init__(name, self._visa_address, terminator='', **kwargs)
@@ -53,10 +54,13 @@ class AbacoDAC(IPInstrument):
         # pass
 
         self._state = 2
+        # ToDo: if we don't want to reinitialize every time we restart the kernel, we will need a way of asking for the curret state
         self._shape = {}
+        # ToDo: if we don't want to reconfigure every time we start up, we will need a way of asking the current waveform shape as well
 
         #self._initialize()
         # ToDo: it would be better if it only initialized if it weren't already initialized - its time consuming and restarting the kernel doesn't require reinitializing the instrument
+        # maybe just add reinitialize_hardware argument, and initialize and set state within that? But better if it comes from the instrument...
         #self._specify_file(file='initial_file')
 
         print("Abaco connected")
@@ -160,9 +164,19 @@ class AbacoDAC(IPInstrument):
 
         return True
 
-    def get_waveform_shape(filename):
-        # ToDo: create this function (what format does the new waveform have? is it a forged sequence? a summary?)
-        return {}
+    @classmethod
+    def get_waveform_shape(cls, filename, dformat=1):
+        # ToDo: what if the file is binary?
+        filepath = cls.FILE_LOCATION + filename + '_0.txt'
+
+        if dformat == 2:
+            raise RuntimeError('Not sure how to extract shape from binary data file yet')
+            
+        with open(filepath, 'r') as f:
+            num_elements = next(f)
+            total_num_samples = next(f)
+
+        return (num_elements, total_num_samples) # (number of elements, total number of samples per channel)
 
     def upload_to_fpga(self, file=None):
         # ToDo: select file to upload
