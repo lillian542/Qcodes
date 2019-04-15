@@ -38,7 +38,7 @@ class AbacoDAC(IPInstrument):
 
     max_16b2c = 32767
 
-    def __init__(self, name, address, port, *args, **kwargs) -> None:
+    def __init__(self, name, address, port, initial_file='initial_file', **kwargs) -> None:
         # ToDo: add 'initial_file' kwarg, use that to get shape
         # address is TCPIP0::hostname::port::SOCKET
         # self._visa_address = "TCPIP0::{:s}::{:d}::SOCKET".format(address, port)
@@ -52,10 +52,12 @@ class AbacoDAC(IPInstrument):
         # # cls.ask("config_state")
         # # glWaveFileMask=test_
         # pass
+        # ToDo: decide on shape for initial file
+        self._specify_file('initial_file')
+        self.load_waveform()
 
-        self._state = 2
-        # ToDo: if we don't want to reinitialize every time we restart the kernel, we will need a way of asking for the curret state
-        self._shape = {}
+        # ToDo: if we don't want to reinitialize every time we restart the kernel, we will need a way of asking for the current state
+        self._shape = self.get_waveform_shape('initial_file')
         # ToDo: if we don't want to reconfigure every time we start up, we will need a way of asking the current waveform shape as well
 
         #self._initialize()
@@ -104,9 +106,9 @@ class AbacoDAC(IPInstrument):
         time.sleep(60)
         self._state = 2
 
-    def _specify_file(self, file):
-        # ToDo: talk to Ruben about how to specify which file to upload without accessing the GUI
-        pass
+    def _specify_file(self, filename):
+        file_mask = f"{file}_"
+        self.ask(f"glWaveFileMask={file_mask}")
 
     def _load_waveform_to_fpga(self):
         self.ask('load_waveform_state')
@@ -143,7 +145,6 @@ class AbacoDAC(IPInstrument):
 
         self._state = 5
 
-
     @contextmanager
     def temporary_timeout(self, timeout):
         old_timeout = self._timeout
@@ -173,8 +174,8 @@ class AbacoDAC(IPInstrument):
             raise RuntimeError('Not sure how to extract shape from binary data file yet')
             
         with open(filepath, 'r') as f:
-            num_elements = next(f)
-            total_num_samples = next(f)
+            num_elements = int(next(f).strip('\n'))
+            total_num_samples = int(next(f).strip('\n'))
 
         return (num_elements, total_num_samples) # (number of elements, total number of samples per channel)
 
