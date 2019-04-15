@@ -55,23 +55,20 @@ class AbacoDAC(IPInstrument):
 
         if not os.path.exists(self.FILE_LOCATION_FROM_CONTROL):
             raise RuntimeError(f"The specified waveform file location, {self.FILE_LOCATION_FROM_CONTROL}, does not exist.")
+        self.ask(f'glWaveFileFolder={self.FILE_LOCATION_FROM_AWG}')
 
         # ToDo: decide on shape for initial file
         self.dformat=dformat
         self.file_extensions = {1: '.txt', 2: '.bin'}
-        self.ask(f'glWaveFileExtension={self.file_extensions[dformat]}')
-        self.ask(f'glWaveFileFolder={self.FILE_LOCATION_FROM_AWG}')
-        self.select_file(initial_file)
 
+        self.select_file(initial_file)
         if new_initialization:
             # ToDo: decide whether to initialize/configure based on get_state function
             self._initialize()
             self._configure_hardware()
-
         self._state = 2
-        self.load_waveform_from_file()
-
         self._shape = self.get_waveform_shape(initial_file)
+        self.load_waveform_from_file()
 
         self.add_parameter('max_trigger_freq', 
                            unit = 'Hz',
@@ -131,7 +128,6 @@ class AbacoDAC(IPInstrument):
     def _load_waveform_to_fpga(self):
         self.ask('load_waveform_state')
         self._state = 3
-        self._shape = {}  # ToDo: add shape!
 
     def _enable_output(self):
         if self._state != 3:
@@ -159,7 +155,7 @@ class AbacoDAC(IPInstrument):
         waveform_size_bytes = samples_per_waveform * 2
         max_data_rate_per_channel = (12.16/8) * 10e9  # 4DSP verification records pg 16
 
-        return {'waveform_size_bytes': waveform_size_bytes, 'max_trigger_freq': int(max_data_rate_per_channel/waveform_size_bytes)}
+        return int(max_data_rate_per_channel/waveform_size_bytes)
 
     def _is_new_waveform_shape(self, new_waveform):
 
@@ -186,10 +182,15 @@ class AbacoDAC(IPInstrument):
         return [num_elements, total_num_samples]  # (number of elements, total number of samples per channel)
 
     def load_waveform_from_file(self, new_waveform_file=None):
-        if new_waveform_file is not None:
-            self.select_file(new_waveform_file)
 
-        if self._state < 2 or self._is_new_waveform_shape(new_waveform_file):
+        is_new_shape = self._is_new_waveform_shape(new_waveform_file)
+
+        if new_waveform_file is not None:
+            # update file and waveform shape if using new file
+            self.select_file(new_waveform_file)
+            self._shape = self.get_waveform_shape(new_waveform_file)
+
+        if self._state < 2 or is_new_shape:
             self._configure_hardware()
         elif self._state == 4:
             self._disable_output()
@@ -199,7 +200,6 @@ class AbacoDAC(IPInstrument):
         self._load_waveform_to_fpga()
 
         self._state = 3
-        self._shape = {}  # ToDo: add shape!
 
     def select_file(self, filename, dformat=None):
         self._set_file_type(dformat)
