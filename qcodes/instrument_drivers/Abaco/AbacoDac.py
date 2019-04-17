@@ -76,28 +76,6 @@ class AbacoDAC(IPInstrument):
 
         print("Abaco connected")
 
-    #     # ToDo: add option to set amplitude and offset by channel
-    #     self.add_parameter('voltage_coupling_mode',
-    #                        set_cmd=self.set_V_pp,
-    #                        get_cmd=self.get_V_pp,
-    #                        vals=vals.Enum('DC', 'AC'))
-    #     print(self.voltage_coupling_mode)
-    #     self.voltage_coupling_mode.set('DC')
-    #     print(self.voltage_coupling_mode)
-    #     self.add_parameter('V_pp',
-    #                        set_cmd=self.set_V_pp,
-    #                        get_cmd=self.get_V_pp,
-    #                        label='Voltage peak-to-peak',
-    #                        vals=vals.Numbers(0, self.MAX_V_PP[self.voltage_coupling_mode]))
-    # def set_V_pp(self, val):
-    #     self.V_pp = val
-    # def get_V_pp(self):
-    #     return self.V_pp
-    # def set_voltage_coupling_mode(self, val):
-    #     self.voltage_coupling_mode = val
-    # def get_voltage_coupling_mode(self):
-    #     return self.voltage_coupling_mode
-
     @contextmanager
     def temporary_timeout(self, timeout):
         old_timeout = self._timeout
@@ -250,6 +228,7 @@ class AbacoDAC(IPInstrument):
         Args:
             seq: The forged sequence
             dformat: 1 for text file format, 2 for binary
+            filename: mask for the file name (files saved will then be filename_0.bin, filename_1.bin, etc)
         """
 
         """
@@ -309,9 +288,9 @@ class AbacoDAC(IPInstrument):
             raise RuntimeError(f"Variable dformat must be 1 (for txt file) or 2 (for bin file). Received {dformat}.")
 
         # if binary, header data is 4 byte unsigned integers, instead of default 2 byte signed used for remaining data
-        cls.write_sample(header, n_blocks, dformat, bytes=4, signed=False)
+        cls.write_sample(header, n_blocks, dformat, b=4, signed=False)
         for i in range(channels_per_file):
-            cls.write_sample(header, total_num_samples, dformat, bytes=4, signed=False)
+            cls.write_sample(header, total_num_samples, dformat, b=4, signed=False)
 
         return header
 
@@ -374,25 +353,17 @@ class AbacoDAC(IPInstrument):
                 shutil.copyfileobj(contents, fd)
 
     @staticmethod
-    def write_sample(stream, sample, dformat, bytes=2, signed=True):
+    def write_sample(stream, sample, dformat, b=2, signed=True):
         if dformat == 1:
             print('{}'.format(sample), file=stream)
         elif dformat == 2:
-            stream.write(sample.to_bytes(bytes, byteorder=sys.byteorder, signed=signed))
+            stream.write(sample.to_bytes(b, byteorder=sys.byteorder, signed=signed))
 
-    def forged_seq_array_to_16b2c(self, array):
+    @classmethod
+    def forged_seq_array_to_16b2c(cls, array):
         """Takes an array with values between -1 and 1, where 1 specifies max voltage and -1 min voltage.
-
-        Returns an array of voltages (based on the current set peak-to-peak voltage) converted into twos-complement
-        data, as required by the AWG."""
-        # ToDo: fix this when adding setting peak-to-peak voltage
-        # ToDo: make this channel specific, as peak to peak voltage could be set per channel
-        try:
-            amplitude_scaling = self.V_pp/self.MAX_V_PP[self.voltage_coupling_mode]
-        except:
-            amplitude_scaling = 1
-        # ToDo: test this
-        return (array * self.max_16b2c * amplitude_scaling).astype(int)
+        Converts the array into twos-complement data, as required by the AWG."""
+        return (array * cls.max_16b2c).astype(int)
 
     @classmethod
     def _voltage_to_int(cls, v):
