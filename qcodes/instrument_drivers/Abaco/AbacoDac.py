@@ -35,11 +35,16 @@ class AbacoDAC(IPInstrument):
               2: 'hardware_configured',
               3: 'wavefrom_uploaded',
               4: 'output_enabled',
-              5: 'output_disabled'}  # This seems not useful for anything except reading the code about the order of the functions more easily
+              5: 'output_disabled'}
+    # ToDo: this will be redundant once get_state function is implemented
 
     max_16b2c = 32767
 
-    def __init__(self, name, address, port, initial_file='initial_file', dformat=1, new_initialization=True, **kwargs) -> None:
+    def __init__(self, name, address, port,
+                 initial_file='initial_file',
+                 dformat=1,
+                 new_initialization=True,
+                 **kwargs) -> None:
         # address is TCPIP0::hostname::port::SOCKET
         # self._visa_address = "TCPIP0::{:s}::{:d}::SOCKET".format(address, port)
         # super().__init__(name, self._visa_address, terminator='', **kwargs)
@@ -54,11 +59,11 @@ class AbacoDAC(IPInstrument):
         # pass
 
         if not os.path.exists(self.FILE_LOCATION_FROM_CONTROL):
-            raise RuntimeError(f"The specified waveform file location, {self.FILE_LOCATION_FROM_CONTROL}, does not exist.")
+            raise RuntimeError(f"Can't find specified waveform file location, {self.FILE_LOCATION_FROM_CONTROL}.")
         self.ask(f'glWaveFileFolder={self.FILE_LOCATION_FROM_AWG}')
 
         # ToDo: decide on shape for initial file
-        self.dformat=dformat
+        self.dformat = dformat
         self.file_extensions = {1: '.txt', 2: '.bin'}
 
         self.select_file(initial_file)
@@ -71,7 +76,7 @@ class AbacoDAC(IPInstrument):
         self.load_waveform_from_file()
 
         self.add_parameter('max_trigger_freq', 
-                           unit = 'Hz',
+                           unit='Hz',
                            get_cmd=self._get_max_trigger_freq)
 
         print("Abaco connected")
@@ -99,9 +104,9 @@ class AbacoDAC(IPInstrument):
 
     def _set_file_type(self, dformat):
         if dformat is None:
-            dformat=self.dformat
+            dformat = self.dformat
         self.ask(f'glWaveFileExtension={self.file_extensions[dformat]}')
-        # ToDo: I belive it needs to reconfigure if dformat is changed
+        # ToDo: I believe it needs to reconfigure if dformat is changed
 
     def _load_waveform_to_fpga(self):
         self.ask('load_waveform_state')
