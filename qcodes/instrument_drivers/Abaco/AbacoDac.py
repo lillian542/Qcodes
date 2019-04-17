@@ -42,7 +42,7 @@ class AbacoDAC(IPInstrument):
 
     def __init__(self, name, address, port,
                  initial_file='initial_file',
-                 dformat=1,
+                 dformat=2,
                  new_initialization=True,
                  **kwargs) -> None:
         """            dformat: 1 for text file format, 2 for binary """
@@ -62,26 +62,28 @@ class AbacoDAC(IPInstrument):
         if not os.path.exists(self.FILE_LOCATION_FROM_CONTROL):
             raise RuntimeError(f"Can't find specified waveform file location, {self.FILE_LOCATION_FROM_CONTROL}.")
         self.ask(f'glWaveFileFolder={self.FILE_LOCATION_FROM_AWG}')
-
         # ToDo: decide on shape for initial file
-        self.dformat = dformat
         self.initial_file = initial_file
+        self._state = 0
 
-        # ToDo: this should only happen if the current dformat is not the same as the specified one
-        self._set_dformat(self, dformat)
         if new_initialization:
             # ToDo: decide whether to initialize/configure based on get_state function
             self._initialize()
-            self._configure_hardware()
-        self._state = 2
+            self._set_dformat(dformat)
+        else:
+            # ToDo: this should only happen if the current dformat is not the same as the specified one
+            self._set_dformat(dformat)
+            self._state = 2
+        
         self._shape = self.get_waveform_shape(initial_file)
         self.load_waveform_from_file()
 
         self.add_parameter('max_trigger_freq', 
                            unit='Hz',
                            get_cmd=self._get_max_trigger_freq)
-        self.add_parameter('dformat',
-                           set_cmd=self._set_file_type)
+        self.add_parameter('dformat', 
+                           get_cmd=self._get_dformat,
+                           set_cmd=self._set_dformat)
 
         print("Abaco connected")
 
@@ -107,18 +109,22 @@ class AbacoDAC(IPInstrument):
         self.ask(f"glWaveFileMask={file_mask}")
 
     def _set_dformat(self, dformat):
-        self.dformat = dformat
         if dformat == 1:
             self.file_extension = '.txt'
         else:
-            self.file_extension = 'bin'
+            self.file_extension = '.bin'
         self.ask(f'glWaveFileExtension={self.file_extension}')
         self._set_file_mask(self.initial_file)
         self._configure_hardware()
 
     def _get_dformat(self):
         # ToDo: can this be from get_status, instead of just saved as an attribute of the instrument?
-        return self.dformat
+        if self.file_extension == '.txt':
+            return 1
+        elif self.file_extension == '.bin':
+            return 2
+        else:
+            raise RuntimeError('dformat has not been set')
 
     def _load_waveform_to_fpga(self):
         self.ask('load_waveform_state')
@@ -154,26 +160,31 @@ class AbacoDAC(IPInstrument):
 
     def _is_new_waveform_shape(self, new_waveform):
 
-        if new_waveform is not None:
-            new_shape = self.get_waveform_shape(new_waveform)
+        # ToDo: implement once get_state function is available, until then always reconfigure
 
-            if new_shape != self._shape:
-                return True
+        # if new_waveform is not None:
+        #     new_shape = self.get_waveform_shape(new_waveform)
+
+        #     if new_shape != self._shape:
+        #         return True
 
         return False
 
     def get_waveform_shape(self, filename):
-        # ToDo: rewrite this to get shape from get_state function
-        filepath = self.FILE_LOCATION_FROM_CONTROL + filename + '_0.txt'
+        # ToDo: implement once get_state function is available, until then always reconfigure
+        # if self.dformat() == 1:
+        #     file_extension = '_0.txt'
+        # elif self.dformat() == 2:
+        #     file_extension = '_0.bin'
 
-        if self.dformat == 2:
-            raise RuntimeError('Not sure how to extract shape from binary data file yet')
+        # filepath = self.FILE_LOCATION_FROM_CONTROL + filename + file_extension
             
-        with open(filepath, 'r') as f:
-            num_elements = int(next(f).strip('\n'))
-            total_num_samples = int(next(f).strip('\n'))
+        # with open(filepath, 'r') as f:
+        #     num_elements = int(next(f).strip('\n'))
+        #     total_num_samples = int(next(f).strip('\n'))
 
-        return [num_elements, total_num_samples]  # (number of elements, total number of samples per channel)
+        # return [num_elements, total_num_samples]  # (number of elements, total number of samples per channel)
+        return None
 
     def load_waveform_from_file(self, new_waveform_file=None):
 
@@ -181,7 +192,7 @@ class AbacoDAC(IPInstrument):
 
         if new_waveform_file is not None:
             # update file and waveform shape if using new file
-            self.select_file(new_waveform_file)
+            self._set_file_mask(new_waveform_file)
             self._shape = self.get_waveform_shape(new_waveform_file)
 
         if self._state < 2 or is_new_shape:
@@ -208,7 +219,7 @@ class AbacoDAC(IPInstrument):
     # AWG file functions #
     ######################
 
-    def make_and_send_awg_file(self, seq: List[np.ndarray], filename=None):
+    def make_and_send_awg_file(self, seq: List[np.ndarray], dformat, filename=None):
         """
         This function produces a text data file for the abaco DAC that
         specifies the waveforms. Samples are represented by integer values.
@@ -251,6 +262,7 @@ class AbacoDAC(IPInstrument):
             3. The total number of samples (i.e. block or element size) is the same for all channels
 
         """
+
         used_channels = [ch for ch in seq[0]['data'].keys()]
         for ch in used_channels:
             if ch not in range(1, self.NUM_CHANNELS+1):
@@ -278,29 +290,29 @@ class AbacoDAC(IPInstrument):
         padded_block_size = -(-block_size // d) * d
         total_num_samples = padded_block_size * n_blocks
 
-        header = self._make_file_header(n_blocks, total_num_samples)
+        header = self._make_file_header(n_blocks, total_num_samples, dformat)
 
-        data = self._make_file_data(n_blocks, padded_block_size, output_dict)
+        data = self._make_file_data(n_blocks, padded_block_size, output_dict, dformat)
 
-        self._create_files(header, data, filename)
+        self._create_files(header, data, dformat, filename)
 
-    def _make_file_header(self, n_blocks, total_num_samples, channels_per_file=8):
+    def _make_file_header(self, n_blocks, total_num_samples, dformat, channels_per_file=8):
         """args: number of elements, total number of samples
         returns: IO for file header, in either string (dformat=1) or binary (dformat=2) format.
         """
-        if self.dformat == 1:
+        if dformat == 1:
             header = io.StringIO()
-        elif self.dformat == 2:
+        elif dformat == 2:
             header = io.BytesIO()
 
         # if binary, header data is 4 byte unsigned integers, instead of default 2 byte signed used for remaining data
-        self.write_sample(header, n_blocks, self.dformat, b=4, signed=False)
+        self.write_sample(header, n_blocks, dformat, b=4, signed=False)
         for i in range(channels_per_file):
-            self.write_sample(header, total_num_samples, self.dformat, b=4, signed=False)
+            self.write_sample(header, total_num_samples, dformat, b=4, signed=False)
 
         return header
 
-    def _make_file_data(self, n_blocks, padded_block_size, output_dict):
+    def _make_file_data(self, n_blocks, padded_block_size, output_dict, dformat):
 
         # ToDo: it feels like there must be a better way to organize the output_dict so that this is better
 
@@ -309,9 +321,9 @@ class AbacoDAC(IPInstrument):
         for file_i, channel_list in self.FILE_CHANNEL_POSITION.items():
             file_output_array = [output_dict[ch] for ch in channel_list]
 
-            if self.dformat == 1:
+            if dformat == 1:
                 output = io.StringIO()
-            elif self.dformat == 2:
+            elif dformat == 2:
                 output = io.BytesIO()
 
             for i_block in range(n_blocks):
@@ -322,19 +334,19 @@ class AbacoDAC(IPInstrument):
                             current_sample = int(a[i_sample])
                         except IndexError:
                             current_sample = int(0)
-                        self.write_sample(output, current_sample, self.dformat)
+                        self.write_sample(output, current_sample, dformat)
 
             data[file_i] = output
 
         return data
 
-    def _create_files(self, header, data, filename=None):
+    def _create_files(self, header, data, dformat, filename=None):
         if filename is None:
             filename = self.FILENAME
         
         filepath = self.FILE_LOCATION_FROM_CONTROL + filename + '{}.{}'
 
-        if self.dformat == 1:
+        if dformat == 1:
             file_access = 'w'
             file_type = 'txt'
             content_type = io.StringIO
