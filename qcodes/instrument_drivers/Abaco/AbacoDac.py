@@ -271,6 +271,8 @@ class AbacoDAC(IPInstrument):
             3. The total number of samples (i.e. block or element size) is the same for all channels
 
         """
+        start = time.clock()
+        print('Starting to make awg file')
 
         used_channels = [ch for ch in seq[0]['data'].keys()]
         for ch in used_channels:
@@ -293,6 +295,7 @@ class AbacoDAC(IPInstrument):
                     else:
                         output_dict[ch].append(np.zeros(block_size))
 
+
         # get number of blocks (elements), padded_block_size and total_num_samples
         n_blocks = len(output_dict[1])
         d = self.SAMPLES_IN_BUFFER_DIVISOR
@@ -304,6 +307,9 @@ class AbacoDAC(IPInstrument):
         data = self._make_file_data(n_blocks, padded_block_size, output_dict)
 
         self._create_files(header, data, filename)
+
+        end = time.clock()
+        print(f"Completed making and saving file in {(end-start)} seconds")
 
     def _make_file_header(self, n_blocks, total_num_samples, channels_per_file=8):
         """args: number of elements, total number of samples
@@ -322,13 +328,15 @@ class AbacoDAC(IPInstrument):
     def _make_file_data(self, n_blocks, padded_block_size, output_dict):
 
         # ToDo: it feels like there must be a better way to organize the output_dict so that this is better
-
+        start = time.clock()
         data = {}
 
         for file_i, channel_list in self.FILE_CHANNEL_MAPPING.items():
             file_output_array = [output_dict[ch] for ch in channel_list]
 
             output = self._data_object()
+
+            test = []
 
             for i_block in range(n_blocks):
                 for i_sample in range(padded_block_size):  # Assumption 3
@@ -338,7 +346,15 @@ class AbacoDAC(IPInstrument):
                             current_sample = int(a[i_sample])
                         except IndexError:
                             current_sample = int(0)
-                        self.write_sample(output, current_sample, self.data_format())
+                        # ToDo: figure out binary file format, fix binary format to also call write_sample as few times as possible
+                        if self.data_format() == 'TXT':
+                            test.append(f'{current_sample}')
+                        else:
+                            self.write_sample(output, current_sample, self.data_format())
+
+            if self.data_format() == 'TXT':
+                samples = '\n'.join(test)
+                self.write_sample(output, samples, self.data_format())
 
             data[file_i] = output
 
