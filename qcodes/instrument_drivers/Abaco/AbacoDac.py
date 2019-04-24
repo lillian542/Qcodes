@@ -266,16 +266,6 @@ class AbacoDAC(IPInstrument):
             seq: The forged sequence
             filename: mask for the file name (files saved will then be filename_0.bin, filename_1.bin, etc)
         """
-
-        """
-        Assumptions:
-            1. All elements have the same channels outputting in them, so the channels in seq[0] are the same as in
-               every other element.
-            2. The length (in samples) of the longest channel output array for element 0 is also the length of the 
-               longest output array for the entire sequence.
-            3. The total number of samples (i.e. block or element size) is the same for all channels
-
-        """
         start = time.clock()
         print('Starting to make awg file')
 
@@ -286,7 +276,8 @@ class AbacoDAC(IPInstrument):
                               f"Data for {ch} will not be uploaded.")
 
         # get element size (size of longest channel output array)
-        block_size = max([len(a) for a in seq[0]['data'].values()])  # Assumption 2
+        # assume length of the longest channel array for element 0 is also the length of the longest output array for the entire sequence.
+        block_size = max([len(a) for a in seq[0]['data'].values()])
 
         # create output dictionary containing list of output data for all channels, including padding on each element
         output_dict = {ch: [] for ch in range(1, self.NUM_CHANNELS + 1)}
@@ -343,7 +334,7 @@ class AbacoDAC(IPInstrument):
             all_samples = []
 
             for i_block in range(n_blocks):
-                for i_sample in range(padded_block_size):  # Assumption 3
+                for i_sample in range(padded_block_size): 
                     for i_channel in range(len(channel_list)):
                         a = file_output_array[i_channel][i_block]
                         try:
@@ -355,43 +346,6 @@ class AbacoDAC(IPInstrument):
             # binary format is len(all_samples) lines of 2 byte signed integers ('h')
             binary_format = str(len(all_samples)) + 'h'
             self.write_sample(output, all_samples, self.data_format(), binary_format)
-
-            # if self.data_format() == 'TXT':
-
-            #     all_samples = []
-            #     for i_block in range(n_blocks):
-            #         for i_sample in range(padded_block_size):  # Assumption 3
-            #             for i_channel in range(len(channel_list)):
-            #                 a = file_output_array[i_channel][i_block]
-            #                 try:
-            #                     current_sample = int(a[i_sample])
-            #                 except IndexError:
-            #                     current_sample = int(0)
-            #             all_samples.append(f'{current_sample}')
-
-            #     samples = '\n'.join(all_samples)
-
-            # if self.data_format() == 'BIN':
-
-            #     samples = None
-
-            #     for i_block in range(n_blocks):
-            #         for i_sample in range(padded_block_size):  # Assumption 3
-            #             for i_channel in range(len(channel_list)):
-            #                 a = file_output_array[i_channel][i_block]
-            #                 try:
-            #                     current_sample = int(a[i_sample])
-            #                 except IndexError:
-            #                     current_sample = int(0)
-            #                 current_sample = current_sample.to_bytes(2, byteorder=sys.byteorder, signed=True)
-            #                 # ToDo: figure out binary file format, fix binary format to also call write_sample as few times as possible
-            #                 if samples is None:
-            #                     samples = current_sample
-            #                 else:
-            #                     samples += current_sample
-            #                 # self.write_sample(output, current_sample, self.data_format())
-                
-            # self.write_sample(output, samples, self.data_format(), b=None)
 
             data[file_i] = output
 
@@ -424,13 +378,8 @@ class AbacoDAC(IPInstrument):
         elif dformat == 'BIN':
             stream.write(struct.pack(binary_format, *contents))
            
-
     @classmethod
     def forged_seq_array_to_16b2c(cls, array):
         """Takes an array with values between -1 and 1, where 1 specifies max voltage and -1 min voltage.
         Converts the array into twos-complement data, as required by the AWG."""
         return (array * cls.max_16b2c).astype(int)
-
-    @classmethod
-    def _voltage_to_int(cls, v):
-        return int(round(v / cls.V_PP_DC * 2 ** (cls.DAC_RESOLUTION_BITS - 1)))
