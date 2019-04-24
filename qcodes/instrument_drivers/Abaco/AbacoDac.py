@@ -8,6 +8,7 @@ import shutil
 import sys
 import time
 import warnings
+import struct
 
 from qcodes.instrument.visa import VisaInstrument
 from qcodes.instrument.ip import IPInstrument
@@ -65,7 +66,7 @@ class AbacoDAC(IPInstrument):
         self.add_parameter('data_format', 
                            get_cmd=self._get_dformat,
                            set_cmd=self._set_dformat,
-                           vals = vals.Enum('TXT', 'BIN'))
+                           vals=vals.Enum('TXT', 'BIN'))
 
         if not os.path.exists(self.FILE_LOCATION_FROM_CONTROL):
             raise RuntimeError(f"Can't find specified waveform file location, {self.FILE_LOCATION_FROM_CONTROL}.")
@@ -101,14 +102,18 @@ class AbacoDAC(IPInstrument):
         self.set_timeout(old_timeout)
 
     def _initialize(self):
+        print("Trying to initialize")
         self.ask('init_state')
         time.sleep(80)  # ToDo: do this with temporary timeout instead? How do timeouts work for instruments?
         self._state = 1
+        print("Done waiting for system initialization")
 
     def _configure_hardware(self):
+        print("Trying to configure")
         self.ask('config_state')
         time.sleep(60)
         self._state = 2
+        print("Done waiting for hardware configuration")
 
     def _set_file_mask(self, filename):
         file_mask = f"{filename}_"
@@ -295,7 +300,6 @@ class AbacoDAC(IPInstrument):
                     else:
                         output_dict[ch].append(np.zeros(block_size))
 
-
         # get number of blocks (elements), padded_block_size and total_num_samples
         n_blocks = len(output_dict[1])
         d = self.SAMPLES_IN_BUFFER_DIVISOR
@@ -317,18 +321,18 @@ class AbacoDAC(IPInstrument):
         """
 
         header = self._data_object()
-
-        # if binary, header data is 4 byte unsigned integers, instead of default 2 byte signed used for remaining data
-        self.write_sample(header, n_blocks, self.data_format(), b=4, signed=False)
+        contents = [n_blocks]
         for i in range(channels_per_file):
-            self.write_sample(header, total_num_samples, self.data_format(), b=4, signed=False)
+            contents.append(total_num_samples)
 
+        # binary format is 9 lines of 4 byte unsigned integers ('9I')
+        self.write_sample(header, contents, self.data_format(), binary_format='9I')
+        
         return header
 
     def _make_file_data(self, n_blocks, padded_block_size, output_dict):
 
         # ToDo: it feels like there must be a better way to organize the output_dict so that this is better
-        start = time.clock()
         data = {}
 
         for file_i, channel_list in self.FILE_CHANNEL_MAPPING.items():
@@ -336,7 +340,7 @@ class AbacoDAC(IPInstrument):
 
             output = self._data_object()
 
-            test = []
+            all_samples = []
 
             for i_block in range(n_blocks):
                 for i_sample in range(padded_block_size):  # Assumption 3
@@ -346,15 +350,48 @@ class AbacoDAC(IPInstrument):
                             current_sample = int(a[i_sample])
                         except IndexError:
                             current_sample = int(0)
-                        # ToDo: figure out binary file format, fix binary format to also call write_sample as few times as possible
-                        if self.data_format() == 'TXT':
-                            test.append(f'{current_sample}')
-                        else:
-                            self.write_sample(output, current_sample, self.data_format())
+                        all_samples.append(current_sample)
 
-            if self.data_format() == 'TXT':
-                samples = '\n'.join(test)
-                self.write_sample(output, samples, self.data_format())
+            # binary format is len(all_samples) lines of 2 byte signed integers ('h')
+            binary_format = str(len(all_samples)) + 'h'
+            self.write_sample(output, all_samples, self.data_format(), binary_format)
+
+            # if self.data_format() == 'TXT':
+
+            #     all_samples = []
+            #     for i_block in range(n_blocks):
+            #         for i_sample in range(padded_block_size):  # Assumption 3
+            #             for i_channel in range(len(channel_list)):
+            #                 a = file_output_array[i_channel][i_block]
+            #                 try:
+            #                     current_sample = int(a[i_sample])
+            #                 except IndexError:
+            #                     current_sample = int(0)
+            #             all_samples.append(f'{current_sample}')
+
+            #     samples = '\n'.join(all_samples)
+
+            # if self.data_format() == 'BIN':
+
+            #     samples = None
+
+            #     for i_block in range(n_blocks):
+            #         for i_sample in range(padded_block_size):  # Assumption 3
+            #             for i_channel in range(len(channel_list)):
+            #                 a = file_output_array[i_channel][i_block]
+            #                 try:
+            #                     current_sample = int(a[i_sample])
+            #                 except IndexError:
+            #                     current_sample = int(0)
+            #                 current_sample = current_sample.to_bytes(2, byteorder=sys.byteorder, signed=True)
+            #                 # ToDo: figure out binary file format, fix binary format to also call write_sample as few times as possible
+            #                 if samples is None:
+            #                     samples = current_sample
+            #                 else:
+            #                     samples += current_sample
+            #                 # self.write_sample(output, current_sample, self.data_format())
+                
+            # self.write_sample(output, samples, self.data_format(), b=None)
 
             data[file_i] = output
 
@@ -380,11 +417,13 @@ class AbacoDAC(IPInstrument):
                 shutil.copyfileobj(contents, fd)
 
     @staticmethod
-    def write_sample(stream, sample, dformat, b=2, signed=True):
+    def write_sample(stream, contents, dformat, binary_format):
         if dformat == 'TXT':
-            print('{}'.format(sample), file=stream)
+            contents = [str(x)+'\n' for x in contents]
+            stream.writelines(contents)
         elif dformat == 'BIN':
-            stream.write(sample.to_bytes(b, byteorder=sys.byteorder, signed=signed))
+            stream.write(struct.pack(binary_format, *contents))
+           
 
     @classmethod
     def forged_seq_array_to_16b2c(cls, array):
