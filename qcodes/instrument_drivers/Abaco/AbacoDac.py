@@ -66,12 +66,12 @@ class AbacoDAC(IPInstrument):
         self.add_parameter('data_format', 
                            get_cmd=self._get_dformat,
                            set_cmd=self._set_dformat,
-                           vals=vals.Enum('TXT', 'BIN'))
+                           vals=vals.Enum('TXT', 'BIN', 'txt', 'bin'))
 
         if not os.path.exists(self.FILE_LOCATION_FROM_CONTROL):
             raise RuntimeError(f"Can't find specified waveform file location, {self.FILE_LOCATION_FROM_CONTROL}.")
 
-        self.ask(f'glWaveFileFolder={self.FILE_LOCATION_FROM_AWG}')
+        self._set_waveform_folder(self.FILE_LOCATION_FROM_AWG)
 
         self._file_extension = None
         self._data_object = None
@@ -103,33 +103,37 @@ class AbacoDAC(IPInstrument):
 
     def _initialize(self):
         print("Trying to initialize")
-        self.ask('init_state')
+        self.ask(':SYST:INIT')
         time.sleep(80)  # ToDo: do this with temporary timeout instead? How do timeouts work for instruments?
         self._state = 1
         print("Done waiting for system initialization")
 
     def _configure_hardware(self):
-        print("Trying to configure")
-        self.ask('config_state')
+        if not self._is_initialized:
+            print("System was not initialized. Initializing before hardware configuration.")
+            self._initialize()
+        self.ask(':SYST:CONF')
         time.sleep(60)
-        self._state = 2
         print("Done waiting for hardware configuration")
 
     def _set_file_mask(self, filename):
         file_mask = f"{filename}_"
-        self.ask(f"glWaveFileMask={file_mask}")
+        self.ask(f":SYST:FMSK {file_mask}")
+
+    def _set_waveform_folder(self, folder):
+        self.ask(f':SYST:WVFLD {folder}')
 
     def _set_dformat(self, dformat):
-        if dformat == 'TXT':
+        if dformat.upper() == 'TXT':
             self._file_extension = 'txt'
             self._data_object = io.StringIO
             self._file_write_access = 'w'
-        else:
+        elif dformat.upper() == 'BIN':
             self._file_extension = 'bin'
             self._data_object = io.BytesIO
             self._file_write_access = 'wb'
 
-        self.ask(f'glWaveFileExtension=.{self._file_extension}')
+        self.ask(f':SYST:WVEXTN {dformat.upper()}')
         self._set_file_mask(self.initial_file)
         self._configure_hardware()
 
@@ -141,26 +145,25 @@ class AbacoDAC(IPInstrument):
             raise RuntimeError('data format has not been set')
 
     def _load_waveform_to_fpga(self):
-        # ToDo: Add error message if in wrong state
-        self.ask('load_waveform_state')
-        self._state = 3
+        # System must be initialized and configured, and not currently outputting
+        if not self._is_configured():
+            raise RuntimeError("System is not configured. Cannot upload waveform to fpga.")
+        if self._output_enabled():
+            self._disable_output()
+        # if waveform has a new shape, system must be reconfigured
+        # ToDo: if new waveform has new shape, reconfigure
+        self.ask(':SYST:LDWVF')
 
     def _enable_output(self):
-        if self._state != 3:
+        if not self._wf_uploaded_to_fpga():
             raise RuntimeError('Waveform not uploaded, cannot enable output')
             # ToDo: change this to re-upload current file?
-
-        self.ask('enable_offload_state')
-
-        self._state = 4
+        self.ask(':SYST:ENBL')
 
     def _disable_output(self):
-        if self._state != 4:
+        if not self._output_enabled():
             raise RuntimeError("Waveform output not enabled, cannot disable output")
-
-        self.ask('disable_offload_state')
-
-        self._state = 5
+        self.ask(':SYST:DSBL')
 
     def _get_max_trigger_freq(self):
         # ToDo: update to access get_state function?
@@ -185,6 +188,51 @@ class AbacoDAC(IPInstrument):
 
         return False
 
+    def load_waveform_from_file(self, new_waveform_file=None):
+
+        is_new_shape = self._is_new_waveform_shape(new_waveform_file)
+
+        if new_waveform_file is not None:
+            # update file and waveform shape if using new file
+            self._set_file_mask(new_waveform_file)
+            self._shape = self.get_waveform_shape(new_waveform_file)
+
+        if not self._is_configured() or is_new_shape:
+            self._configure_hardware()
+
+        self._load_waveform_to_fpga()
+
+    def run(self, file=None):
+        # ToDo: with get_state function, should only load waveform if it hasn't already been loaded
+        self.load_waveform_from_file(file)
+        self._enable_output()
+
+    def stop(self):
+        self._disable_output()
+
+    ###########################
+    # System status functions #
+    ###########################
+
+    def _get_status(self, cmd):
+        status = self.ask(cmd)
+        return int(status[-1])
+
+    def _is_initialized(self):
+        self._get_status(':SYST:INIT?')
+
+    def _is_configured(self):
+        self._get_status(':SYST:CONF?')
+
+    def _wf_uploaded_to_fpga(self):
+        self._get_status(':SYST:LDWVF?')
+
+    def _output_enabled(self):
+        self._get_status(':SYST:ENBL?')
+
+    def _output_disabled(self):
+        self._get_status(':SYSYT:DSBL?')
+
     def get_waveform_shape(self, filename):
         # ToDo: implement once get_state function is available, until then always reconfigure
         # if self.dformat() == 1:
@@ -201,33 +249,6 @@ class AbacoDAC(IPInstrument):
         # return [num_elements, total_num_samples]  # (number of elements, total number of samples per channel)
         return None
 
-    def load_waveform_from_file(self, new_waveform_file=None):
-
-        is_new_shape = self._is_new_waveform_shape(new_waveform_file)
-
-        if new_waveform_file is not None:
-            # update file and waveform shape if using new file
-            self._set_file_mask(new_waveform_file)
-            self._shape = self.get_waveform_shape(new_waveform_file)
-
-        if self._state < 2 or is_new_shape:
-            self._configure_hardware()
-        elif self._state == 4:
-            self._disable_output()
-
-        # ToDo: It also needs to reconfigure in order to switch between text and binary formats
-
-        self._load_waveform_to_fpga()
-
-        self._state = 3
-
-    def run(self, file=None):
-        # ToDo: with get_state function, should only load waveform if it hasn't already been loaded
-        self.load_waveform_from_file(file)
-        self._enable_output()
-
-    def stop(self):
-        self._disable_output()
 
     ######################
     # AWG file functions #
