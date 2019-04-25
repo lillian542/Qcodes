@@ -31,13 +31,7 @@ class AbacoDAC(IPInstrument):
 
     NUM_CHANNELS = 8 * len(FILE_CHANNEL_MAPPING)
 
-    STATES = {0: 'not_initialized',
-              1: 'initialized',
-              2: 'hardware_configured',
-              3: 'wavefrom_uploaded',
-              4: 'output_enabled',
-              5: 'output_disabled'}
-    # ToDo: this will be redundant once get_state function is implemented
+
 
     max_16b2c = 32767
 
@@ -71,24 +65,21 @@ class AbacoDAC(IPInstrument):
         if not os.path.exists(self.FILE_LOCATION_FROM_CONTROL):
             raise RuntimeError(f"Can't find specified waveform file location, {self.FILE_LOCATION_FROM_CONTROL}.")
 
-        self._set_waveform_folder(self.FILE_LOCATION_FROM_AWG)
-
         self._file_extension = None
         self._data_object = None
         self._file_write_access = None
 
         # ToDo: decide on shape for initial file
         self.initial_file = initial_file
-        self._state = 0
 
-        if new_initialization:
-            # ToDo: decide whether to initialize/configure based on get_state function
+        self._set_waveform_folder(self.FILE_LOCATION_FROM_AWG)
+        
+        # initialize if needed
+        if not self._is_initialized():
             self._initialize()
-            self.data_format(dformat)
-        else:
-            # ToDo: this should only happen if the current dformat is not the same as the specified one
-            self.data_format(dformat)
-            self._state = 2
+        
+        # then set file extension, set file mask to initial_file, and configure
+        self.data_format(dformat)
         
         self._shape = self.get_waveform_shape(initial_file)
 
@@ -124,6 +115,7 @@ class AbacoDAC(IPInstrument):
         self.ask(f':SYST:WVFLD {folder}')
 
     def _set_dformat(self, dformat):
+        # ToDo: check if current dformat is the same, do nothing if it is
         if dformat.upper() == 'TXT':
             self._file_extension = 'txt'
             self._data_object = io.StringIO
@@ -219,19 +211,19 @@ class AbacoDAC(IPInstrument):
         return int(status[-1])
 
     def _is_initialized(self):
-        self._get_status(':SYST:INIT?')
+        return self._get_status(':SYST:INIT?')
 
     def _is_configured(self):
-        self._get_status(':SYST:CONF?')
+        return self._get_status(':SYST:CONF?')
 
     def _wf_uploaded_to_fpga(self):
-        self._get_status(':SYST:LDWVF?')
+        return self._get_status(':SYST:LDWVF?')
 
     def _output_enabled(self):
-        self._get_status(':SYST:ENBL?')
+        return self._get_status(':SYST:ENBL?')
 
     def _output_disabled(self):
-        self._get_status(':SYSYT:DSBL?')
+        return self._get_status(':SYSYT:DSBL?')
 
     def get_waveform_shape(self, filename):
         # ToDo: implement once get_state function is available, until then always reconfigure
