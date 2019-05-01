@@ -119,18 +119,15 @@ class AbacoDAC(IPInstrument):
         self.ask(f':SYST:WVFLD {folder}')
 
     def _set_dformat(self, dformat):
-        if self.data_format() == dformat:
-            pass
-        else:
-            if dformat.upper() == 'TXT':
-                self._file_extension = 'txt'
-                self._data_object = io.StringIO
-                self._file_write_access = 'w'
-            elif dformat.upper() == 'BIN':
-                self._file_extension = 'bin'
-                self._data_object = io.BytesIO
-                self._file_write_access = 'wb'
-
+        if dformat.upper() == 'TXT':
+            self._file_extension = 'txt'
+            self._data_object = io.StringIO
+            self._file_write_access = 'w'
+        elif dformat.upper() == 'BIN':
+            self._file_extension = 'bin'
+            self._data_object = io.BytesIO
+            self._file_write_access = 'wb'
+        if self.data_format() != dformat.upper():
             self.ask(f':SYST:WVEXTN {dformat.upper()}')
             self._set_file_mask(self.initial_file)
             self._configure_hardware()
@@ -155,8 +152,8 @@ class AbacoDAC(IPInstrument):
         self.ask(':SYST:DSBL')
 
     def _get_max_trigger_freq(self):
-        num_elements = self.num_blocks
-        total_samples = self.waveform_size / 2
+        num_elements = self.num_blocks()
+        total_samples = self.waveform_size() / 2
         # ToDo: if Ruben updates it to return size in number of samples, remove the factor of 2!!!
 
         samples_per_waveform = total_samples/num_elements
@@ -166,21 +163,18 @@ class AbacoDAC(IPInstrument):
         return int(max_data_rate_per_channel/waveform_size_bytes)
 
     def load_waveform_from_file(self, new_waveform_file=None):
-
         if new_waveform_file is not None:
 
             # update file and waveform shape if using new file
             self._set_file_mask(new_waveform_file)
 
             # if waveform shape in new file is different than the currently configured shape, reconfigure
-            new_wf_shape = self.waveform_shape_from_file(new_waveform_file)
-            if new_wf_shape != [self.num_blocks, self.size]:
+            new_wf_shape = self._get_waveform_shape_for_current_file()
+            if new_wf_shape != [self.num_blocks(), self.waveform_size()]:
                 self._configure_hardware()
-
         self._load_waveform_to_fpga()
 
-    def waveform_shape_from_file(self, filename):
-        self._set_file_mask(filename)
+    def _get_waveform_shape_for_current_file(self):
         cmd, num_blocks, size = self.ask(':SYST:FILE?').strip().split(' ')
         return [int(num_blocks), int(size)]  # (number of elements, total waveform size per channel)
 
@@ -193,6 +187,8 @@ class AbacoDAC(IPInstrument):
     def stop(self):
         self._disable_output()
 
+    def stop2(self):
+        self.ask(':SYST:DSBL')
     ###########################
     # System status functions #
     ###########################
