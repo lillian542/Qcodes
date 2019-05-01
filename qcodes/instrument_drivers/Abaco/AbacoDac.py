@@ -1,16 +1,13 @@
-from contextlib import contextmanager
+from functools import partial
 import numpy as np
 import io
 import os
 from typing import List
-from math import ceil
 import shutil
-import sys
 import time
 import warnings
 import struct
 
-from qcodes.instrument.visa import VisaInstrument
 from qcodes.instrument.ip import IPInstrument
 
 import qcodes.utils.validators as vals
@@ -31,36 +28,53 @@ class AbacoDAC(IPInstrument):
 
     NUM_CHANNELS = 8 * len(FILE_CHANNEL_MAPPING)
 
-
-
     max_16b2c = 32767
 
     def __init__(self, name, address, port,
                  initial_file='initial_file',
                  dformat='BIN',
-                 new_initialization=True,
                  **kwargs) -> None:
-        """            dformat: 1 for text file format, 2 for binary """
-        # address is TCPIP0::hostname::port::SOCKET
+
+        # For Visa instrument: address is TCPIP0::hostname::port::SOCKET
         # self._visa_address = "TCPIP0::{:s}::{:d}::SOCKET".format(address, port)
         # super().__init__(name, self._visa_address, terminator='', **kwargs)
+
         super().__init__(name, address, port, **kwargs, persistent=False, terminator='')
-        # with self.temporary_timeout(11):
-        #     print("asked returned {}".format(self.ask("init_state\n")))
-        #     print("asked returned {}".format(self.ask("init_state\n")))
-        # # cls.ask("init_state")
-        # # time.sleep(1)
-        # # cls.ask("config_state")
-        # # glWaveFileMask=test_
-        # pass
+
+        def return_parser(parser, inputstring):
+            """
+            Parses return values from instrument. Meant to be used when a query
+            can return a meaningful finite number or a numeric representation
+            of infinity
+            Args:
+                parser: Either int (for cases where system returns 1 or 0
+                   to indicate state) or string (for all other responses).
+                inputstring: The raw return value
+            """
+
+            inputstring = inputstring.strip()
+
+            cmd, resp = inputstring.split(' ')
+
+            output = parser(resp)
+
+            return output
 
         self.add_parameter('max_trigger_freq', 
                            unit='Hz',
                            get_cmd=self._get_max_trigger_freq)
-        self.add_parameter('data_format', 
-                           get_cmd=self._get_dformat,
+        self.add_parameter('data_format',
+                           # ToDo: test - what happens when data format hasn't been set yet?
+                           get_cmd=':SYST:WVEXTN?',
+                           get_parser=partial(return_parser, str),
                            set_cmd=self._set_dformat,
                            vals=vals.Enum('TXT', 'BIN', 'txt', 'bin'))
+        self.add_parameter('num_blocks',
+                           get_cmd=':SYST:BLOCKS?',
+                           get_parser=partial(return_parser, int))
+        self.add_parameter('waveform_size',
+                           get_cmd=':SYST:WVSIZE?',
+                           get_parser=partial(return_parser, int))
 
         if not os.path.exists(self.FILE_LOCATION_FROM_CONTROL):
             raise RuntimeError(f"Can't find specified waveform file location, {self.FILE_LOCATION_FROM_CONTROL}.")
@@ -69,7 +83,6 @@ class AbacoDAC(IPInstrument):
         self._data_object = None
         self._file_write_access = None
 
-        # ToDo: decide on shape for initial file
         self.initial_file = initial_file
 
         self._set_waveform_folder(self.FILE_LOCATION_FROM_AWG)
@@ -79,33 +92,24 @@ class AbacoDAC(IPInstrument):
             self._initialize()
         
         # then set file extension, set file mask to initial_file, and configure
+        # (setting data format always uses self.initial file as file mask and reconfigures with the new dataformat)
         self.data_format(dformat)
-        
-        self._shape = self.get_waveform_shape(initial_file)
 
         print("Abaco connected")
 
-    @contextmanager
-    def temporary_timeout(self, timeout):
-        old_timeout = self._timeout
-        self.set_timeout(timeout)
-        yield
-        self.set_timeout(old_timeout)
-
     def _initialize(self):
-        print("Trying to initialize")
         self.ask(':SYST:INIT')
-        time.sleep(80)  # ToDo: do this with temporary timeout instead? How do timeouts work for instruments?
-        self._state = 1
-        print("Done waiting for system initialization")
+        time.sleep(80)
+        if not self._is_initialized():
+            raise RuntimeError('System attempted to initialize but was unsuccessful.')
 
     def _configure_hardware(self):
         if not self._is_initialized:
-            print("System was not initialized. Initializing before hardware configuration.")
             self._initialize()
         self.ask(':SYST:CONF')
         time.sleep(60)
-        print("Done waiting for hardware configuration")
+        if not self._is_configured():
+            raise RuntimeError('System attempted to configure hardware but was unsuccessful.')
 
     def _set_file_mask(self, filename):
         file_mask = f"{filename}_"
@@ -115,52 +119,45 @@ class AbacoDAC(IPInstrument):
         self.ask(f':SYST:WVFLD {folder}')
 
     def _set_dformat(self, dformat):
-        # ToDo: check if current dformat is the same, do nothing if it is
-        if dformat.upper() == 'TXT':
-            self._file_extension = 'txt'
-            self._data_object = io.StringIO
-            self._file_write_access = 'w'
-        elif dformat.upper() == 'BIN':
-            self._file_extension = 'bin'
-            self._data_object = io.BytesIO
-            self._file_write_access = 'wb'
-
-        self.ask(f':SYST:WVEXTN {dformat.upper()}')
-        self._set_file_mask(self.initial_file)
-        self._configure_hardware()
-
-    def _get_dformat(self):
-        # ToDo: can this be from get_status, instead of just saved as an attribute of the instrument?
-        if isinstance(self._file_extension, str):
-            return self._file_extension.strip('.').upper()
+        if self.data_format() == dformat:
+            pass
         else:
-            raise RuntimeError('data format has not been set')
+            if dformat.upper() == 'TXT':
+                self._file_extension = 'txt'
+                self._data_object = io.StringIO
+                self._file_write_access = 'w'
+            elif dformat.upper() == 'BIN':
+                self._file_extension = 'bin'
+                self._data_object = io.BytesIO
+                self._file_write_access = 'wb'
+
+            self.ask(f':SYST:WVEXTN {dformat.upper()}')
+            self._set_file_mask(self.initial_file)
+            self._configure_hardware()
 
     def _load_waveform_to_fpga(self):
         # System must be initialized and configured, and not currently outputting
         if not self._is_configured():
             raise RuntimeError("System is not configured. Cannot upload waveform to fpga.")
-        if self._output_enabled():
+        if self._output_is_enabled():
             self._disable_output()
-        # if waveform has a new shape, system must be reconfigured
-        # ToDo: if new waveform has new shape, reconfigure
+
         self.ask(':SYST:LDWVF')
 
     def _enable_output(self):
         if not self._wf_uploaded_to_fpga():
             raise RuntimeError('Waveform not uploaded, cannot enable output')
-            # ToDo: change this to re-upload current file?
         self.ask(':SYST:ENBL')
 
     def _disable_output(self):
-        if not self._output_enabled():
+        if not self._output_is_enabled():
             raise RuntimeError("Waveform output not enabled, cannot disable output")
         self.ask(':SYST:DSBL')
 
     def _get_max_trigger_freq(self):
-        # ToDo: update to access get_state function?
-        num_elements = self._shape[0]
-        total_samples = self._shape[1]
+        num_elements = self.num_blocks
+        total_samples = self.waveform_size / 2
+        # ToDo: if Ruben updates it to return size in number of samples, remove the factor of 2!!!
 
         samples_per_waveform = total_samples/num_elements
         waveform_size_bytes = samples_per_waveform * 2
@@ -168,35 +165,29 @@ class AbacoDAC(IPInstrument):
 
         return int(max_data_rate_per_channel/waveform_size_bytes)
 
-    def _is_new_waveform_shape(self, new_waveform):
-
-        # ToDo: implement once get_state function is available, until then always reconfigure
-
-        # if new_waveform is not None:
-        #     new_shape = self.get_waveform_shape(new_waveform)
-
-        #     if new_shape != self._shape:
-        #         return True
-
-        return False
-
     def load_waveform_from_file(self, new_waveform_file=None):
 
-        is_new_shape = self._is_new_waveform_shape(new_waveform_file)
-
         if new_waveform_file is not None:
+
             # update file and waveform shape if using new file
             self._set_file_mask(new_waveform_file)
-            self._shape = self.get_waveform_shape(new_waveform_file)
 
-        if not self._is_configured() or is_new_shape:
-            self._configure_hardware()
+            # if waveform shape in new file is different than the currently configured shape, reconfigure
+            new_wf_shape = self.waveform_shape_from_file(new_waveform_file)
+            if new_wf_shape != [self.num_blocks, self.size]:
+                self._configure_hardware()
 
         self._load_waveform_to_fpga()
 
-    def run(self, file=None):
-        # ToDo: with get_state function, should only load waveform if it hasn't already been loaded
-        self.load_waveform_from_file(file)
+    def waveform_shape_from_file(self, filename):
+        self._set_file_mask(filename)
+        cmd, num_blocks, size = self.ask(':SYST:FILE?').strip().split(' ')
+        return [int(num_blocks), int(size)]  # (number of elements, total waveform size per channel)
+
+    def run(self):
+        # if output has previously been stopped, the current file must be reuploaded to the fpga
+        if not self._wf_uploaded_to_fpga():
+            self._load_waveform_to_fpga()
         self._enable_output()
 
     def stop(self):
@@ -219,28 +210,11 @@ class AbacoDAC(IPInstrument):
     def _wf_uploaded_to_fpga(self):
         return self._get_status(':SYST:LDWVF?')
 
-    def _output_enabled(self):
+    def _output_is_enabled(self):
         return self._get_status(':SYST:ENBL?')
 
-    def _output_disabled(self):
-        return self._get_status(':SYSYT:DSBL?')
-
-    def get_waveform_shape(self, filename):
-        # ToDo: implement once get_state function is available, until then always reconfigure
-        # if self.dformat() == 1:
-        #     file_extension = '_0.txt'
-        # elif self.dformat() == 2:
-        #     file_extension = '_0.bin'
-
-        # filepath = self.FILE_LOCATION_FROM_CONTROL + filename + file_extension
-            
-        # with open(filepath, 'r') as f:
-        #     num_elements = int(next(f).strip('\n'))
-        #     total_num_samples = int(next(f).strip('\n'))
-
-        # return [num_elements, total_num_samples]  # (number of elements, total number of samples per channel)
-        return None
-
+    def _output_is_disabled(self):
+        return self._get_status(':SYST:DSBL?')
 
     ######################
     # AWG file functions #
@@ -288,8 +262,8 @@ class AbacoDAC(IPInstrument):
                 warnings.warn(f"Unknown channel specified: {ch}. AWG has channels 1-{self.NUM_CHANNELS}. "
                               f"Data for {ch} will not be uploaded.")
 
-        # get element size (size of longest channel output array)
-        # assume length of the longest channel array for element 0 is also the length of the longest output array for the entire sequence.
+        # get element size (size of longest channel array)
+        # assume the longest array for element 0 is also the longest output array for the entire sequence
         block_size = max([len(a) for a in seq[0]['data'].values()])
 
         # create output dictionary containing list of output data for all channels, including padding on each element
@@ -298,7 +272,6 @@ class AbacoDAC(IPInstrument):
             for ch in output_dict:
                 for rep in range(element['sequencing']['nrep']):
                     if ch in element['data']:
-                        # ToDo: convert output dict values into twos complement data here
                         a = self.forged_seq_array_to_16b2c(element['data'][ch])
                         output_dict[ch].append(a)
                     else:
