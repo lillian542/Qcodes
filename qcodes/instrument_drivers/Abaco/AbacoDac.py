@@ -97,6 +97,11 @@ class AbacoDAC(IPInstrument):
 
         print("Abaco connected")
 
+    def ask_raw(self, *args, **kwargs):
+        response = super().ask_raw(*args, **kwargs)
+        time.sleep(0.2)
+        return response
+
     def _initialize(self):
         self.ask(':SYST:INIT')
         time.sleep(80)
@@ -186,15 +191,15 @@ class AbacoDAC(IPInstrument):
 
     def stop(self):
         self._disable_output()
-
-    def stop2(self):
-        self.ask(':SYST:DSBL')
+ 
     ###########################
     # System status functions #
     ###########################
 
     def _get_status(self, cmd):
         status = self.ask(cmd)
+        if status is None:
+            raise RuntimeError(f'No response from abaco when asking {cmd}')
         return int(status[-1])
 
     def _is_initialized(self):
