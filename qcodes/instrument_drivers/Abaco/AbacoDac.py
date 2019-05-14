@@ -278,6 +278,7 @@ class AbacoDAC(IPInstrument):
                     else:
                         output_dict[ch].append(np.zeros(block_size))
 
+
         # get number of blocks (elements), padded_block_size and total_num_samples
         n_blocks = len(output_dict[1])
         d = self.SAMPLES_IN_BUFFER_DIVISOR
@@ -286,9 +287,12 @@ class AbacoDAC(IPInstrument):
 
         header = self._make_file_header(n_blocks, total_num_samples)
 
+        new_time = time.clock()
         data = self._make_file_data(n_blocks, padded_block_size, output_dict)
-
+        print(f"Created file data in {time.clock()-new_time} seconds")
+        new_time = time.clock()
         self._create_files(header, data, filename)
+        print(f"Information saved to file in {time.clock()-new_time} seconds")
 
         end = time.clock()
         print(f"Completed making and saving file in {(end-start)} seconds")
@@ -355,7 +359,8 @@ class AbacoDAC(IPInstrument):
 
             with open(filepath.format(i, file_type), file_access) as fd:
                 contents.seek(0)
-                shutil.copyfileobj(contents, fd)
+                shutil.copyfileobj(contents, fd, length=16*1024*1024*8)
+
 
     @staticmethod
     def write_sample(stream, contents, dformat, binary_format):
