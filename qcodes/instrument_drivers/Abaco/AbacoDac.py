@@ -277,6 +277,13 @@ class AbacoDAC(IPInstrument):
         padded_block_size = -(-block_size // d) * d
         total_num_samples = padded_block_size * n_blocks
 
+        if n_blocks > 1000:
+            raise RuntimeError(f"Sequence has {n_blocks} blocks. Maximum number of blocks is 1000.")
+        if padded_block_size > 30700:
+            raise RuntimeError(f"Block size is {padded_block_size} samples. Limit for reliable output is 30700 samples.")
+        if total_num_samples > 10200000:
+            raise RuntimeError(f"Total number of samples in the waveform (per channel) is {total_num_samples}. Limit for reliable output is 10200000 samples.")
+
         header = self._make_file_header(n_blocks, total_num_samples)
 
         new_time = time.clock()
