@@ -142,7 +142,6 @@ class AbacoDAC(IPInstrument):
             raise RuntimeError("System is not configured. Cannot upload waveform to fpga.")
         if self._output_is_enabled():
             self._disable_output()
-
         self.ask(':SYST:LDWVF')
 
     def _enable_output(self):
@@ -167,15 +166,9 @@ class AbacoDAC(IPInstrument):
         return int(max_data_rate_per_channel/waveform_size_bytes)
 
     def load_waveform_from_file(self, new_waveform_file=None):
+        # update file name if using new file
         if new_waveform_file is not None:
-
-            # update file and waveform shape if using new file
             self._set_file_mask(new_waveform_file)
-
-            # if waveform shape in new file is different than the currently configured shape, reconfigure
-            new_wf_shape = self._get_waveform_shape_for_current_file()
-            if new_wf_shape != [self.num_blocks(), self.waveform_size()]:
-                self._configure_hardware()
         self._load_waveform_to_fpga()
 
     def _get_waveform_shape_for_current_file(self):
