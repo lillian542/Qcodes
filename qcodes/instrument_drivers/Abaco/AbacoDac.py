@@ -90,6 +90,8 @@ class AbacoDAC(IPInstrument):
         # initialize if needed
         if not self._is_initialized():
             self._initialize()
+        if not self._is_configured():
+            self._configure_hardware()
         
         # then set file extension, set file mask to initial_file, and configure
         # (setting data format always uses self.initial file as file mask and reconfigures with the new dataformat)
@@ -132,10 +134,7 @@ class AbacoDAC(IPInstrument):
             self._file_extension = 'bin'
             self._data_object = io.BytesIO
             self._file_write_access = 'wb'
-        if self.data_format() != dformat.upper():
-            self.ask(f':SYST:WVEXTN {dformat.upper()}')
-            self._set_file_mask(self.initial_file)
-            self._configure_hardware()
+        self.ask(f':SYST:WVEXTN {dformat.upper()}')
 
     def _load_waveform_to_fpga(self):
         # System must be initialized and configured, and not currently outputting
@@ -337,7 +336,6 @@ class AbacoDAC(IPInstrument):
             # binary format is len(all_samples) lines of 2 byte signed integers ('h')
             binary_format = str(len(all_samples)) + 'h'
             self.write_sample(output, all_samples, self.data_format(), binary_format)
-
             data[file_i] = output
 
         return data
