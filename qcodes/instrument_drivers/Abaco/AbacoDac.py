@@ -213,7 +213,7 @@ class AbacoDAC(IPInstrument):
     # AWG file functions #
     ######################
 
-    def make_and_send_awg_file(self, seq: List[np.ndarray], filename=None):
+    def make_and_send_awg_file(self, seq: List[np.ndarray], filename=None, buffer_length=16*1024*1024*8):
         """
         This function produces a text data file for the abaco DAC that
         specifies the waveforms. Samples are represented by integer values.
@@ -289,12 +289,17 @@ class AbacoDAC(IPInstrument):
         new_time = time.clock()
         data = self._make_file_data(n_blocks, padded_block_size, output_dict)
         print(f"Created file data in {time.clock()-new_time} seconds")
+
+
         new_time = time.clock()
-        self._create_files(header, data, filename)
+        self._create_files(header, data, filename, buffer_length=buffer_length)
+        file_creation_time = time.clock()-new_time
+
         print(f"Information saved to file in {time.clock()-new_time} seconds")
 
         end = time.clock()
         print(f"Completed making and saving file in {(end-start)} seconds")
+        
 
     def _make_file_header(self, n_blocks, total_num_samples, channels_per_file=8):
         """args: number of elements, total number of samples
@@ -340,7 +345,7 @@ class AbacoDAC(IPInstrument):
 
         return data
 
-    def _create_files(self, header, data, filename=None):
+    def _create_files(self, header, data, filename=None, buffer_length=16*1024*1024*8):
         if filename is None:
             filename = self.FILENAME
         
@@ -357,7 +362,7 @@ class AbacoDAC(IPInstrument):
 
             with open(filepath.format(i, file_type), file_access) as fd:
                 contents.seek(0)
-                shutil.copyfileobj(contents, fd, length=16*1024*1024*8)
+                shutil.copyfileobj(contents, fd, length=buffer_length)
 
 
     @staticmethod
