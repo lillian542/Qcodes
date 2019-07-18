@@ -247,7 +247,6 @@ class AbacoDAC(IPInstrument):
             filename: mask for the file name (files saved will then be filename_0.bin, filename_1.bin, etc)
         """
         start = time.clock()
-        print('Starting to make awg file')
 
         used_channels = [ch for ch in seq[0]['data'].keys()]
         for ch in used_channels:
@@ -286,20 +285,17 @@ class AbacoDAC(IPInstrument):
 
         header = self._make_file_header(n_blocks, total_num_samples)
 
-        new_time = time.clock()
         data = self._make_file_data(n_blocks, padded_block_size, output_dict)
-        print(f"Created file data in {time.clock()-new_time} seconds")
 
-
-        new_time = time.clock()
+        start_file_save = time.clock()
         self._create_files(header, data, filename, buffer_length=buffer_length)
-        file_creation_time = time.clock()-new_time
-
-        print(f"Information saved to file in {time.clock()-new_time} seconds")
 
         end = time.clock()
-        print(f"Completed making and saving file in {(end-start)} seconds")
-        
+
+        print(f"Information saved to file in {end-start_file_save} seconds")
+
+        print(f"Completed making and saving Abaco AWG file in {(end-start)} seconds")
+
 
     def _make_file_header(self, n_blocks, total_num_samples, channels_per_file=8):
         """args: number of elements, total number of samples
