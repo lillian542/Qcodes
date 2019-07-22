@@ -2,7 +2,6 @@ from functools import partial
 import numpy as np
 import io
 import os
-from typing import List
 import shutil
 import time
 import warnings
@@ -157,7 +156,7 @@ class AbacoDAC(IPInstrument):
     def _get_max_trigger_freq(self):
         num_elements = self.num_blocks()
         total_samples = self.waveform_size() / 2
-        # ToDo: if Ruben updates it to return size in number of samples, remove the factor of 2!!!
+        # ToDo: if Ruben updates it to return size in number of samples instead, remove the factor of 2!!!
 
         samples_per_waveform = total_samples/num_elements
         waveform_size_bytes = samples_per_waveform * 2
@@ -213,11 +212,12 @@ class AbacoDAC(IPInstrument):
     # AWG file functions #
     ######################
 
-    def make_and_send_awg_file(self, seq: List[np.ndarray], filename=None, buffer_length=16*1024*1024*8):
+    def make_and_send_awg_file(self, seq, filename=None, buffer_length=16*1024*1024*8):
         """
         This function produces a text data file for the abaco DAC that
         specifies the waveforms. Samples are represented by integer values.
-        The file has the following structure:
+        One file is produced for each card (8 channels).
+        The file must have the following structure:
         (lines starting with '#' are not part of the file)
         #--Header--------------------------------------------------------------
         <number of blocks>
@@ -245,6 +245,12 @@ class AbacoDAC(IPInstrument):
         Args:
             seq: The forged sequence
             filename: mask for the file name (files saved will then be filename_0.bin, filename_1.bin, etc)
+            buffer_length: buffer length to be passed first to _create_files and from there to shutil.copyfileobj.
+                           The copyfileobj function loops over the data in chunks, to optimize memory consumption.
+                           Buffer size specifies the size of the chunks. Default size for the copyfileobj function
+                           is 16*1024. This was too slow at the time of writing. But it does vary by Windows 10 update.
+                           If file saving speed suddenly slows, changing this would be the first thing to try (possibly
+                           after restarting the Abaco computer).
         """
         start = time.clock()
 
@@ -269,7 +275,6 @@ class AbacoDAC(IPInstrument):
                     else:
                         output_dict[ch].append(np.zeros(block_size))
 
-
         # get number of blocks (elements), padded_block_size and total_num_samples
         n_blocks = len(output_dict[1])
         d = self.SAMPLES_IN_BUFFER_DIVISOR
@@ -279,9 +284,11 @@ class AbacoDAC(IPInstrument):
         if n_blocks > 1000:
             raise RuntimeError(f"Sequence has {n_blocks} blocks. Maximum number of blocks is 1000.")
         if padded_block_size > 30700:
-            raise RuntimeError(f"Block size is {padded_block_size} samples. Limit for reliable output is 30700 samples.")
+            raise RuntimeError(f"Block size is {padded_block_size} samples. "
+                               f"Limit for reliable output is 30700 samples.")
         if total_num_samples > 10200000:
-            raise RuntimeError(f"Total number of samples in the waveform (per channel) is {total_num_samples}. Limit for reliable output is 10200000 samples.")
+            raise RuntimeError(f"Total number of samples in the waveform (per channel) is {total_num_samples}. "
+                               f"Limit for reliable output is 10200000 samples.")
 
         header = self._make_file_header(n_blocks, total_num_samples)
 
@@ -295,7 +302,6 @@ class AbacoDAC(IPInstrument):
         print(f"Information saved to file in {end-start_file_save} seconds")
 
         print(f"Completed making and saving Abaco AWG file in {(end-start)} seconds")
-
 
     def _make_file_header(self, n_blocks, total_num_samples, channels_per_file=8):
         """args: number of elements, total number of samples
@@ -359,7 +365,6 @@ class AbacoDAC(IPInstrument):
             with open(filepath.format(i, file_type), file_access) as fd:
                 contents.seek(0)
                 shutil.copyfileobj(contents, fd, length=buffer_length)
-
 
     @staticmethod
     def write_sample(stream, contents, dformat, binary_format):
