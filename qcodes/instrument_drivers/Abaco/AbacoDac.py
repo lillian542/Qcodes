@@ -333,6 +333,11 @@ class AbacoDAC(IPInstrument):
             for i_block in range(n_blocks):
                 for i_sample in range(padded_block_size): 
                     for i_channel in range(len(channel_list)):
+                        # ToDo: add option to set Vpp?
+                        """Currently, it is always at 1.7V (max output) such that setting a sine amplitude to 0.8 and 
+                        generating a forged sequence with the PWA makes the 4DSP output a sine wave with an amplitude 
+                        of 1.36 Vpp. A scaling factor based on channel output could be multiplied on here when 
+                        generating 'a' to allow setting the peak to peak voltage to 1 (or any other amplitude < 1.7V)"""
                         a = file_output_array[i_channel][i_block]
                         try:
                             current_sample = int(a[i_sample])

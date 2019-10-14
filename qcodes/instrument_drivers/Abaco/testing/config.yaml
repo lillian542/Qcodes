@@ -1,0 +1,20 @@
+instruments:
+
+  awg_interface:
+    driver: qdev_wrappers.customised_instruments.awg_interface
+    type: SimulatedAWGInterface
+    
+  ps:
+    driver: qdev_wrappers.customised_instruments.parametric_sequencer
+    type: ParametricSequencer
+    # init:
+    #   routes:
+    #     Q0_drive_I: 1
+    #     Q0_drive_Q: 2
+    #     Q0_readout_I: 3
+    #     Q0_readout_Q: 4
+    #     Q0_modulation_marker: 1M1
+    #     readout_marker: 4M1
+    #     sequence_marker: 4M2
+
+

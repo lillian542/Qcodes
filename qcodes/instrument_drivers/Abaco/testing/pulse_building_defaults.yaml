@@ -1,0 +1,71 @@
+context:
+  total_duration: 0.00002
+  drive_stage_duration: 0.00001
+  readout_duration: 0.000004
+  pulse_duration: 0.000001
+  pulse_pulse_delay: 0.0000001
+  pulse_amplitude: 1.0
+  pi_pulse_amplitude: 1.0
+  pi_half_pulse_amplitude: 0.5
+  marker_duration: 0.00000005
+  qubit_marker_duration: 0.000002
+  marker_readout_delay: 0.000000005
+  readout_amplitude: 1.0
+  drive_readout_delay: 0.00000001
+  DRAG_amplitude: 0.2
+  sigma_cutoff: 4.0
+  readout_sideband_0: 1000000
+  dummy_param: 1
+  operation_index: 0
+  operation_index_inner: 0
+  operation_index_outer: 0
+labels:
+  total_duration: 'Cycle Time'
+  drive_stage_duration: 'Drive Stage Duration'
+  readout_duration: 'Readout Pulse Duration'
+  pulse_duration: 'Pulse Duration'
+  pulse_pulse_delay: 'Pulse Pulse Delay'
+  pulse_amplitude: 'Pulse Amplitude'
+  pi_pulse_amplitude: 'Pi Pulse Amplitude'
+  pi_half_pulse_amplitude: 'Pi Half Pulse Amplitude'
+  marker_duration: 'Marker Duration'
+  qubit_marker_duration: 'Qubit Marker Duration'
+  marker_readout_delay: 'Marker Readout Delay'
+  readout_amplitude: 'Readout Amplitude'
+  drive_readout_delay: 'Drive Readout Delay'
+  DRAG_amplitude: 'DRAG Amplitude'
+  sigma_cutoff: 'Sigma Cutoff'
+  readout_sideband_0: 'Readout Sideband 0'
+  readout_sideband_1: 'Readout Sideband 1'
+  readout_sideband_2: 'Readout Sideband 2'
+  readout_sideband_3: 'Readout Sideband 3'
+  readout_sideband_4: 'Readout Sideband 4'
+  readout_sideband_5: 'Readout Sideband 5'
+  operation_index: 'Operation Index'
+  operation_index_inner: 'Operation Index Inner'
+  operation_index_outer: 'Operation Index Outer'
+units:
+  total_duration: 's'
+  drive_stage_duration: 's'
+  readout_duration: 's'
+  pulse_duration: 's'
+  pulse_pulse_delay: 's'
+  pulse_amplitude: ''
+  pi_pulse_amplitude: ''
+  pi_half_pulse_amplitude: ''
+  marker_duration: 's'
+  qubit_marker_duration: 's'
+  marker_delay: 's'
+  readout_amplitude: ''
+  drive_readout_delay: 's'
+  DRAG_amplitude: ''
+  sigma_cutoff: ''
+  readout_sideband_0: 'Hz'
+  readout_sideband_1: 'Hz'
+  readout_sideband_2: 'Hz'
+  readout_sideband_3: 'Hz'
+  readout_sideband_4: 'Hz'
+  readout_sideband_5: 'Hz'
+  operation_index: ''
+  operation_index_inner: ''
+  operation_index_outer: ''
